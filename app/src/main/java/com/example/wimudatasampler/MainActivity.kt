@@ -62,6 +62,9 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private lateinit var wifiScanReceiver: BroadcastReceiver
     private lateinit var timer: TimerUtils
     private var startSamplingTime: String = ""
+    private var lastRotationVector: FloatArray? = null
+    private var lastStepCount: Float? = null
+
     @RequiresApi(Build.VERSION_CODES.Q)
     private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()){
         isGranted: Boolean ->
@@ -131,37 +134,12 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     }
 
     override fun onRotationVectorChanged(rotationVector: FloatArray) {
-        val dir = File(this.getExternalFilesDir(null), startSamplingTime)
-        if (!dir.exists()){
-            dir.mkdirs()
-        }
-        val file = File(dir, "rot.txt") // 保存到外部存储
-        try {
-            val writer = FileWriter(file, true) // 追加模式写入
-            writer.append("${System.currentTimeMillis()} ${rotationVector[0]} ${rotationVector[1]} ${rotationVector[2]} ${rotationVector[3]}\n")
-            writer.flush()
-            writer.close()
-        } catch (e: IOException) {
-            e.printStackTrace()
-        }
+        lastRotationVector = rotationVector
     }
 
     override fun onStepCountChanged(stepCount: Float) {
-        val dir = File(this.getExternalFilesDir(null), startSamplingTime)
-        if (!dir.exists()){
-            dir.mkdirs()
-        }
-        val file = File(dir, "step.txt") // 保存到外部存储
-        try {
-            val writer = FileWriter(file, true) // 追加模式写入
-            writer.append("${System.currentTimeMillis()} $stepCount")
-            writer.flush()
-            writer.close()
-        } catch (e: IOException) {
-            e.printStackTrace()
-        }
+        lastStepCount = stepCount
     }
-
 
 }
 
@@ -170,7 +148,10 @@ fun SampleWidget(context: SensorUtils.SensorDataListener, sensorManager: SensorU
         var resultText by remember {
             mutableStateOf("Scanning Result: 0")
         }
-        var freq by remember {
+        var wifiFreq by remember {
+            mutableStateOf("")
+        }
+        var sensorFreq by remember {
             mutableStateOf("")
         }
         var isSampling by remember {
@@ -185,23 +166,34 @@ fun SampleWidget(context: SensorUtils.SensorDataListener, sensorManager: SensorU
             Button(onClick = {
                 timer.runEverySecondForMinute({wifiScan(wifiManager)}) {
                     count ->
-                    resultText = "Valid Scanning Result: $count, Time period 60s.\n Recommended sampling frequency: ${60 / count} Hz"
+                    resultText = "Valid Scanning Result: $count, Time period 60s.\n Recommended sampling cycle: ${60 / count} s"
                 }
             }) {
                 Text(text = "Test Wi-Fi Sampling Frequency")
             }
             Spacer(modifier = Modifier.height(16.dp))
             TextField(
-                value = freq,
+                value = wifiFreq,
                 onValueChange = { newText ->
-                    // Only allow valid integer values greater than 0
-                    if (newText.isEmpty() || newText.toIntOrNull()?.let { it > 0 } == true) {
-                        freq = newText
-                    }
+                    wifiFreq = newText
                 },
-                label = { Text("Enter frequency") },
+                label = { Text("Enter wifi sampling cycle (s)") },
                 keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number,
+                    keyboardType = KeyboardType.Decimal,
+                    imeAction = ImeAction.Done
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp)
+            )
+            TextField(
+                value = sensorFreq,
+                onValueChange = { newText ->
+                    sensorFreq = newText
+                },
+                label = { Text("Enter sensor sampling cycle (s)") },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Decimal,
                     imeAction = ImeAction.Done
                 ),
                 modifier = Modifier
@@ -215,12 +207,14 @@ fun SampleWidget(context: SensorUtils.SensorDataListener, sensorManager: SensorU
                         // 开始任务逻辑
                         val currentTimeMillis = System.currentTimeMillis()
                         val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(currentTimeMillis)
-                        val frequency = freq.toInt()
+                        val wifiFrequency = wifiFreq.toDouble()
+                        val sensorFrequency = sensorFreq.toDouble()
                         setStartSamplingTime(currentTime)
-                        timer.runTaskAtFrequency({ wifiScan(wifiManager) }, frequency, currentTime,
-                            "WiFi.txt"
-                        ) { successCount ->
-                            Log.d("Finished", "Sampling finished, successful scans: $successCount")
+                        timer.runSensorTaskAtFrequency(sensorManager, sensorFrequency, currentTime) {
+                            Log.d("Sensor Finished", "Sampling finished, successful samples: $it")
+                        }
+                        timer.runWifiTaskAtFrequency(wifiManager, wifiFrequency, currentTime) {
+                            Log.d("WiFi Finished", "Wi-Fi sampling finished, successful samples: $it")
                         }
                         sensorManager.startMonitoring(context)
                         isSampling = true  // 切换为正在采样的状态
@@ -248,6 +242,9 @@ class SensorUtils(context: Context): SensorEventListener {
     private var rotationVectorSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
     private var stepCountSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
 
+    private var lastRotationVector: FloatArray? = null
+    private var lastStepCount: Float? = null
+
     interface SensorDataListener {
         fun onRotationVectorChanged(rotationVector: FloatArray)
         fun onStepCountChanged(stepCount: Float)
@@ -273,9 +270,11 @@ class SensorUtils(context: Context): SensorEventListener {
     override fun onSensorChanged(event: SensorEvent) {
         when (event.sensor.type) {
             Sensor.TYPE_ROTATION_VECTOR -> {
+                lastRotationVector = event.values
                 sensorDataListener?.onRotationVectorChanged(event.values)
             }
             Sensor.TYPE_STEP_COUNTER -> {
+                lastStepCount = event.values[0]
                 sensorDataListener?.onStepCountChanged(event.values[0])
             }
         }
@@ -284,17 +283,23 @@ class SensorUtils(context: Context): SensorEventListener {
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
         Log.d("Sensor Accuracy Changed", "Accuracy changed to: $accuracy")
     }
+
+    fun getLastRotationVector(): FloatArray? = lastRotationVector
+    fun getLastStepCount(): Float? = lastStepCount
+
 }
 
 @Suppress("DEPRECATION")
 class TimerUtils(private val context: Context) {
     private val handler = Handler()
     private var elapsedTime = 0
-    private var successCounter = 0
-    private var isRunning = true
+    private var isSensorTaskRunning = false
     private var failedHappened = false
+    private var isWifiTaskRunning = false
+
 
     fun runEverySecondForMinute(task: () -> Pair<String, Boolean>, onComplete: (Int) -> Unit) {
+        var successCounter = 0
         elapsedTime = 0
         val runnable: Runnable = object : Runnable {
             override fun run() {
@@ -317,51 +322,109 @@ class TimerUtils(private val context: Context) {
         handler.post(runnable)
     }
 
-    fun runTaskAtFrequency(task: () -> Pair<String, Boolean>, frequency: Int, timestamp: String, fileName: String, onComplete: (Int) -> Unit) {
-        elapsedTime = 0
-        successCounter = 0
-        isRunning = true  // 开始任务时将标志设为true
-
+    fun runSensorTaskAtFrequency(
+        sensorManager: SensorUtils,
+        frequency: Double,
+        timestamp: String,
+        onComplete: (Int) -> Unit
+    ) {
+        var successCounter = 0
         val dir = File(context.getExternalFilesDir(null), timestamp)
         if (!dir.exists()) {
             dir.mkdirs()
         }
-        val file = File(dir, fileName) // 保存到外部存储
-        Log.i("SAVE_PATH", file.toString())
+        val stepFile = File(dir, "step.txt")
+        val rotationFile = File(dir, "rotation.txt")
 
         val runnable: Runnable = object : Runnable {
             override fun run() {
-                if (!isRunning) return  // 检查是否需要停止任务
+                if (!isSensorTaskRunning) return
 
-                val (output, success) = task() // 获取任务的String和Boolean输出
+                // Use the last known sensor data, or fallback to default if not available
+                val rotationVector = sensorManager.getLastRotationVector() ?: floatArrayOf(0f, 0f, 0f, 0f)
+                val stepCount = sensorManager.getLastStepCount() ?: 0f
+
+                val currentTime = System.currentTimeMillis()
+                try {
+                    val rotationWriter = FileWriter(rotationFile, true)
+                    rotationWriter.append("$currentTime ${rotationVector.joinToString(" ")}\n")
+                    rotationWriter.flush()
+                    rotationWriter.close()
+                } catch (e: IOException) {
+                    e.printStackTrace()
+                }
+
+                // Write the step count data
+                try {
+                    val stepWriter = FileWriter(stepFile, true)
+                    stepWriter.append("$currentTime $stepCount\n")
+                    stepWriter.flush()
+                    stepWriter.close()
+                } catch (e: IOException) {
+                    e.printStackTrace()
+                }
+
+                successCounter++
+
+                if (isSensorTaskRunning) {
+                    handler.postDelayed(this, (frequency * 1000).toLong())
+                } else {
+                    onComplete(successCounter)
+                }
+            }
+        }
+
+        isSensorTaskRunning = true
+        handler.post(runnable)
+    }
+
+    fun runWifiTaskAtFrequency(
+        wifiManager: WifiManager,
+        frequencyY: Double, // Wi-Fi 采集频率 (秒)
+        timestamp: String,
+        onComplete: (Int) -> Unit
+    ) {
+        var successCounter = 0
+        val dir = File(context.getExternalFilesDir(null), timestamp)
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        val wifiFile = File(dir, "wifi.txt")
+
+        val wifiRunnable: Runnable = object : Runnable {
+            override fun run() {
+                if (!isWifiTaskRunning) return
+
+                // 执行 Wi-Fi 扫描并写入结果
+                val (wifiResults, success) = wifiScan(wifiManager)
                 if (success) {
-                    successCounter += 1
-                    // 将执行结果写入文件
+                    successCounter++
                     try {
-                        val writer = FileWriter(file, true) // 追加模式写入
-                        writer.append("Timestamp ${System.currentTimeMillis()}, $output\n")
-                        writer.flush()
-                        writer.close()
+                        val wifiWriter = FileWriter(wifiFile, true)
+                        wifiWriter.append("$wifiResults\n")
+                        wifiWriter.flush()
+                        wifiWriter.close()
                     } catch (e: IOException) {
                         e.printStackTrace()
                     }
                 }
 
-                elapsedTime += frequency
-                if (isRunning) {
-                    handler.postDelayed(this, (frequency * 1000).toLong()) // 按照频率执行任务
+                if (isWifiTaskRunning) {
+                    handler.postDelayed(this, (frequencyY * 1000).toLong())  // 按照频率Y采集
                 } else {
-                    onComplete(successCounter) // 当任务完成或停止时，调用onComplete回调
+                    onComplete(successCounter)
                 }
             }
         }
 
-        handler.post(runnable)
+        isWifiTaskRunning = true
+        handler.post(wifiRunnable)
     }
 
     // 提供停止任务的方法
     fun stopTask() {
-        isRunning = false  // 将标志设为false，停止任务
+        isSensorTaskRunning = false  // 将标志设为false，停止任务
+        isWifiTaskRunning = false
     }
 }
 
