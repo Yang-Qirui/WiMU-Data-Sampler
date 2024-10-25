@@ -64,6 +64,10 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var startSamplingTime: String = ""
     private var lastRotationVector: FloatArray? = null
     private var lastStepCount: Float? = null
+    private var yaw by mutableStateOf(0f)
+    private var pitch by mutableStateOf(0f)
+    private var roll by mutableStateOf(0f)
+    private var isMonitoringAngles by mutableStateOf(false)
 
     @RequiresApi(Build.VERSION_CODES.Q)
     private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()){
@@ -114,7 +118,12 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                             timer = timer,
                             setStartSamplingTime = {
                                 time -> startSamplingTime = time
-                            }
+                            },
+                            yaw = yaw,
+                            pitch = pitch,
+                            roll = roll,
+                            isMonitoringAngles = isMonitoringAngles,
+                            toggleMonitoringAngles = { toggleAngleMonitoring() }
                         )
                 }
             }
@@ -135,16 +144,31 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
     override fun onRotationVectorChanged(rotationVector: FloatArray) {
         lastRotationVector = rotationVector
+        val rotationMatrix = FloatArray(9)
+        SensorManager.getRotationMatrixFromVector(rotationMatrix, rotationVector)
+        val orientations = FloatArray(3)
+        SensorManager.getOrientation(rotationMatrix, orientations)
+        yaw = Math.toDegrees(orientations[0].toDouble()).toFloat()
+        pitch = Math.toDegrees(orientations[1].toDouble()).toFloat()
+        roll = Math.toDegrees(orientations[2].toDouble()).toFloat()
     }
 
     override fun onStepCountChanged(stepCount: Float) {
         lastStepCount = stepCount
     }
 
+    private fun toggleAngleMonitoring() {
+        isMonitoringAngles = !isMonitoringAngles
+        if (isMonitoringAngles) {
+            motionSensorManager.startMonitoring(this)
+        } else {
+            motionSensorManager.stopMonitoring()
+        }
+    }
 }
 
 @Composable
-fun SampleWidget(context: SensorUtils.SensorDataListener, sensorManager: SensorUtils, wifiManager: WifiManager, padding: PaddingValues, timer: TimerUtils, setStartSamplingTime: (String) -> Unit) {
+fun SampleWidget(context: SensorUtils.SensorDataListener, sensorManager: SensorUtils, wifiManager: WifiManager, padding: PaddingValues, timer: TimerUtils, setStartSamplingTime: (String) -> Unit, yaw: Float, pitch: Float, roll: Float, isMonitoringAngles: Boolean, toggleMonitoringAngles: () -> Unit) {
         var resultText by remember {
             mutableStateOf("Scanning Result: 0")
         }
@@ -162,6 +186,18 @@ fun SampleWidget(context: SensorUtils.SensorDataListener, sensorManager: SensorU
             .padding(padding)
             .fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text(text = resultText)
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(text = "Yaw: ${yaw.toInt()}°")
+            Text(text = "Pitch: ${pitch.toInt()}°")
+            Text(text = "Roll: ${roll.toInt()}°")
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = { toggleMonitoringAngles() }, colors = if (isMonitoringAngles) {
+                ButtonDefaults.buttonColors(containerColor = Color.Red )
+            } else {
+                ButtonDefaults.buttonColors()
+            }) {
+                Text(text = if (isMonitoringAngles) "Stop Monitoring Angles" else "Start Monitoring Angles")
+            }
             Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = {
                 timer.runEverySecondForMinute({wifiScan(wifiManager)}) {
