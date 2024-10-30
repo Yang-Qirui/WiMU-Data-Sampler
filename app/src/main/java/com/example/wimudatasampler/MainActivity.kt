@@ -54,6 +54,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import androidx.compose.runtime.mutableFloatStateOf
 
 
 class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
@@ -64,10 +65,13 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var startSamplingTime: String = ""
     private var lastRotationVector: FloatArray? = null
     private var lastStepCount: Float? = null
-    private var yaw by mutableStateOf(0f)
-    private var pitch by mutableStateOf(0f)
+    private var yaw by mutableFloatStateOf(0f)
+    private var pitch by mutableFloatStateOf(0f)
     private var roll by mutableStateOf(0f)
     private var isMonitoringAngles by mutableStateOf(false)
+    private var showStepCountDialog by mutableStateOf(false)  // 控制弹窗显示状态
+    private var stepCount by mutableFloatStateOf(0f)  // 保存步数值
+
 
     @RequiresApi(Build.VERSION_CODES.Q)
     private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()){
@@ -108,23 +112,22 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         enableEdgeToEdge()
         setContent {
             WiMUDataSamplerTheme {
-                Scaffold (topBar = { TopAppBar(title = { Text(text = "WiMU Data Sampler") }, colors = TopAppBarColors(containerColor = Color.DarkGray, titleContentColor = Color.White, actionIconContentColor = Color.White, navigationIconContentColor = Color.White, scrolledContainerColor = Color.Gray))}) {
-                     innerPadding ->
-                        SampleWidget(
-                            context = this,
-                            sensorManager = motionSensorManager,
-                            wifiManager = wifiManager,
-                            padding = innerPadding,
-                            timer = timer,
-                            setStartSamplingTime = {
-                                time -> startSamplingTime = time
-                            },
-                            yaw = yaw,
-                            pitch = pitch,
-                            roll = roll,
-                            isMonitoringAngles = isMonitoringAngles,
-                            toggleMonitoringAngles = { toggleAngleMonitoring() }
-                        )
+                Scaffold (topBar = { TopAppBar(title = { Text(text = "WiMU Data Sampler") }, colors = TopAppBarColors(containerColor = Color.DarkGray, titleContentColor = Color.White, actionIconContentColor = Color.White, navigationIconContentColor = Color.White, scrolledContainerColor = Color.Gray))}) { innerPadding ->
+                    SampleWidget(
+                        context = this,
+                        sensorManager = motionSensorManager,
+                        wifiManager = wifiManager,
+                        padding = innerPadding,
+                        timer = timer,
+                        setStartSamplingTime = { time ->
+                            startSamplingTime = time
+                        },
+                        yaw = yaw,
+                        pitch = pitch,
+                        roll = roll,
+                        isMonitoringAngles = isMonitoringAngles,
+                        toggleMonitoringAngles = { toggleAngleMonitoring() }
+                    )
                 }
             }
         }
@@ -155,6 +158,8 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
     override fun onStepCountChanged(stepCount: Float) {
         lastStepCount = stepCount
+        this.stepCount = stepCount  // 更新步数值
+        showStepCountDialog = true  // 显示弹窗
     }
 
     private fun toggleAngleMonitoring() {
@@ -242,7 +247,7 @@ fun SampleWidget(context: SensorUtils.SensorDataListener, sensorManager: SensorU
                     if (!isSampling) {
                         // 开始任务逻辑
                         val currentTimeMillis = System.currentTimeMillis()
-                        val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(currentTimeMillis)
+                        val currentTime = SimpleDateFormat("yyyy-MM-dd HH-mm-ss", Locale.getDefault()).format(currentTimeMillis)
                         val wifiFrequency = wifiFreq.toDouble()
                         val sensorFrequency = sensorFreq.toDouble()
                         setStartSamplingTime(currentTime)
@@ -289,8 +294,8 @@ class SensorUtils(context: Context): SensorEventListener {
 
     fun startMonitoring(listener: SensorDataListener) {
         this.sensorDataListener = listener
-        val rotationSuccess = sensorManager.registerListener(this, rotationVectorSensor, SensorManager.SENSOR_DELAY_NORMAL)
-        val stepSuccess = sensorManager.registerListener(this, stepCountSensor, SensorManager.SENSOR_DELAY_NORMAL)
+        val rotationSuccess = sensorManager.registerListener(this, rotationVectorSensor, SensorManager.SENSOR_DELAY_FASTEST)
+        val stepSuccess = sensorManager.registerListener(this, stepCountSensor, SensorManager.SENSOR_DELAY_FASTEST)
         if (!rotationSuccess) {
             Log.e("SensorRegister", "Failed to register rotation vector sensor listener")
         }
@@ -371,6 +376,8 @@ class TimerUtils(private val context: Context) {
         }
         val stepFile = File(dir, "step.txt")
         val rotationFile = File(dir, "rotation.txt")
+        val yawFile = File(dir, "yaw.txt")
+
 
         val runnable: Runnable = object : Runnable {
             override fun run() {
@@ -386,6 +393,22 @@ class TimerUtils(private val context: Context) {
                     rotationWriter.append("$currentTime ${rotationVector.joinToString(" ")}\n")
                     rotationWriter.flush()
                     rotationWriter.close()
+                } catch (e: IOException) {
+                    e.printStackTrace()
+                }
+
+                try {
+                    // Write rotation vector data
+                    val yawWriter = FileWriter(yawFile, true)
+                    // Calculate and write yaw data
+                    val rotationMatrix = FloatArray(9)
+                    SensorManager.getRotationMatrixFromVector(rotationMatrix, rotationVector)
+                    val orientations = FloatArray(3)
+                    SensorManager.getOrientation(rotationMatrix, orientations)
+                    val yaw = Math.toDegrees(orientations[0].toDouble()).toFloat()
+                    yawWriter.append("$currentTime $yaw\n")
+                    yawWriter.flush()
+                    yawWriter.close()
                 } catch (e: IOException) {
                     e.printStackTrace()
                 }
