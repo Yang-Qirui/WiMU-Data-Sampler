@@ -186,6 +186,9 @@ fun SampleWidget(context: SensorUtils.SensorDataListener, sensorManager: SensorU
         var isSampling by remember {
             mutableStateOf(false)
         }
+        var dirName by remember {
+            mutableStateOf("")
+        }
 
         Column (modifier = Modifier
             .padding(padding)
@@ -241,6 +244,20 @@ fun SampleWidget(context: SensorUtils.SensorDataListener, sensorManager: SensorU
                     .fillMaxWidth()
                     .padding(horizontal = 32.dp)
             )
+            TextField(
+                value = dirName,
+                onValueChange = { newText ->
+                    dirName = newText
+                },
+                label = { Text("Enter the name of save directory") },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    imeAction = ImeAction.Done
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp)
+            )
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = {
@@ -251,10 +268,10 @@ fun SampleWidget(context: SensorUtils.SensorDataListener, sensorManager: SensorU
                         val wifiFrequency = wifiFreq.toDouble()
                         val sensorFrequency = sensorFreq.toDouble()
                         setStartSamplingTime(currentTime)
-                        timer.runSensorTaskAtFrequency(sensorManager, sensorFrequency, currentTime) {
+                        timer.runSensorTaskAtFrequency(sensorManager, sensorFrequency, currentTime, dirName) {
                             Log.d("Sensor Finished", "Sampling finished, successful samples: $it")
                         }
-                        timer.runWifiTaskAtFrequency(wifiManager, wifiFrequency, currentTime) {
+                        timer.runWifiTaskAtFrequency(wifiManager, wifiFrequency, currentTime, dirName) {
                             Log.d("WiFi Finished", "Wi-Fi sampling finished, successful samples: $it")
                         }
                         sensorManager.startMonitoring(context)
@@ -367,10 +384,14 @@ class TimerUtils(private val context: Context) {
         sensorManager: SensorUtils,
         frequency: Double,
         timestamp: String,
+        dirName: String,
         onComplete: (Int) -> Unit
     ) {
         var successCounter = 0
-        val dir = File(context.getExternalFilesDir(null), timestamp)
+        var dir = File(context.getExternalFilesDir(null), timestamp)
+        if (dirName != "") {
+            dir = File(context.getExternalFilesDir(null), dirName)
+        }
         if (!dir.exists()) {
             dir.mkdirs()
         }
@@ -441,10 +462,14 @@ class TimerUtils(private val context: Context) {
         wifiManager: WifiManager,
         frequencyY: Double, // Wi-Fi 采集频率 (秒)
         timestamp: String,
+        dirName: String,
         onComplete: (Int) -> Unit
     ) {
         var successCounter = 0
-        val dir = File(context.getExternalFilesDir(null), timestamp)
+        var dir = File(context.getExternalFilesDir(null), timestamp)
+        if (dirName != "") {
+            dir = File(context.getExternalFilesDir(null), dirName)
+        }
         if (!dir.exists()) {
             dir.mkdirs()
         }
