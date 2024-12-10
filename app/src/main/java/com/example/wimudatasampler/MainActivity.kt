@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Paint
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
@@ -54,7 +55,53 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.mutableFloatStateOf
+
+import androidx.navigation.NavController
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Upcoming
+import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material3.Icon
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardColors
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.draw
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.toOffset
+import kotlinx.coroutines.delay
+import kotlin.coroutines.coroutineContext
+import kotlin.math.cos
+import kotlin.math.sin
 
 
 class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
@@ -67,10 +114,11 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var lastStepCount: Float? = null
     private var yaw by mutableFloatStateOf(0f)
     private var pitch by mutableFloatStateOf(0f)
-    private var roll by mutableStateOf(0f)
+    private var roll by mutableFloatStateOf(0f)
     private var isMonitoringAngles by mutableStateOf(false)
     private var showStepCountDialog by mutableStateOf(false)  // 控制弹窗显示状态
     private var stepCount by mutableFloatStateOf(0f)  // 保存步数值
+    private var waypoints = mutableStateListOf<Offset>()
 
 
     @RequiresApi(Build.VERSION_CODES.Q)
@@ -112,22 +160,42 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         enableEdgeToEdge()
         setContent {
             WiMUDataSamplerTheme {
-                Scaffold (topBar = { TopAppBar(title = { Text(text = "WiMU Data Sampler") }, colors = TopAppBarColors(containerColor = Color.DarkGray, titleContentColor = Color.White, actionIconContentColor = Color.White, navigationIconContentColor = Color.White, scrolledContainerColor = Color.Gray))}) { innerPadding ->
-                    SampleWidget(
-                        context = this,
-                        sensorManager = motionSensorManager,
-                        wifiManager = wifiManager,
-                        padding = innerPadding,
-                        timer = timer,
-                        setStartSamplingTime = { time ->
-                            startSamplingTime = time
-                        },
-                        yaw = yaw,
-                        pitch = pitch,
-                        roll = roll,
-                        isMonitoringAngles = isMonitoringAngles,
-                        toggleMonitoringAngles = { toggleAngleMonitoring() }
-                    )
+                // Main Content wrapped in Scaffold
+                val navController = rememberNavController()
+                Scaffold(
+                    topBar = {
+                        TopAppBar(
+                            title = { Text(text = "WiMU Demo") },
+                            colors = TopAppBarColors(containerColor = Color.DarkGray,
+                                                     titleContentColor = Color.White,
+                                                     actionIconContentColor = Color.White,
+                                                     navigationIconContentColor = Color.White,
+                                                     scrolledContainerColor = Color.Gray)
+                        )
+                    },
+                    bottomBar = { BottomNavigationBar(navController) }
+                ) { innerPadding ->
+                    NavHost(navController, startDestination = "sample", Modifier.padding(innerPadding)) {
+                        composable("sample") {
+                            SampleWidget(
+                                context = this@MainActivity,  // Pass the context
+                                sensorManager = motionSensorManager,
+                                wifiManager = wifiManager,
+                                padding = innerPadding,
+                                timer = timer,
+                                setStartSamplingTime = { time -> startSamplingTime = time },
+                                yaw = yaw,
+                                pitch = pitch,
+                                roll = roll,
+                                isMonitoringAngles = isMonitoringAngles,
+                                toggleMonitoringAngles = { toggleAngleMonitoring() },
+                                waypoints = waypoints
+                            )
+                        }
+                        composable("inference") {
+                            InferenceScreen(wifiManager=wifiManager, yaw = yaw, waypoints=waypoints)
+                        }
+                    }
                 }
             }
         }
@@ -172,8 +240,41 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     }
 }
 
+// Navigation Bar for pages: Data Visualization and Data Collecting
 @Composable
-fun SampleWidget(context: SensorUtils.SensorDataListener, sensorManager: SensorUtils, wifiManager: WifiManager, padding: PaddingValues, timer: TimerUtils, setStartSamplingTime: (String) -> Unit, yaw: Float, pitch: Float, roll: Float, isMonitoringAngles: Boolean, toggleMonitoringAngles: () -> Unit) {
+fun BottomNavigationBar(navController: NavController) {
+    NavigationBar {
+        NavigationBarItem(
+            icon = { Icon( Icons.Rounded.Upcoming, contentDescription = "Sample") },
+            label = { Text("Sample") },
+            selected = false, // You can change this dynamically
+            onClick = {
+                navController.navigate("sample")
+            }
+        )
+        NavigationBarItem(
+            icon = { Icon(Icons.Rounded.Bookmark, contentDescription = "Inference") },
+            label = { Text("Inference") },
+            selected = false, // You can change this dynamically
+            onClick = {
+                navController.navigate("inference")
+            }
+        )
+    }
+
+}
+
+@Composable
+fun SampleWidget(context: SensorUtils.SensorDataListener,
+                 sensorManager: SensorUtils,
+                 wifiManager: WifiManager,
+                 padding: PaddingValues,
+                 timer: TimerUtils,
+                 setStartSamplingTime: (String) -> Unit,
+                 yaw: Float, pitch: Float, roll: Float,
+                 isMonitoringAngles: Boolean,
+                 toggleMonitoringAngles: () -> Unit,
+                 waypoints: SnapshotStateList<Offset>) {
         var resultText by remember {
             mutableStateOf("Scanning Result: 0")
         }
@@ -190,15 +291,18 @@ fun SampleWidget(context: SensorUtils.SensorDataListener, sensorManager: SensorU
             mutableStateOf("")
         }
 
+        var selectorExpanded by remember { mutableStateOf(false) }
+        var selectedValue by remember { mutableStateOf("") }
+
         Column (modifier = Modifier
             .padding(padding)
             .fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Text(text = resultText)
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(text = "Yaw: ${yaw.toInt()}°")
-            Text(text = "Pitch: ${pitch.toInt()}°")
-            Text(text = "Roll: ${roll.toInt()}°")
-            Spacer(modifier = Modifier.height(16.dp))
+//            Text(text = resultText)
+//            Spacer(modifier = Modifier.height(16.dp))
+//            Text(text = "Yaw: ${yaw.toInt()}°")
+//            Text(text = "Pitch: ${pitch.toInt()}°")
+//            Text(text = "Roll: ${roll.toInt()}°")
+//            Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = { toggleMonitoringAngles() }, colors = if (isMonitoringAngles) {
                 ButtonDefaults.buttonColors(containerColor = Color.Red )
             } else {
@@ -206,14 +310,37 @@ fun SampleWidget(context: SensorUtils.SensorDataListener, sensorManager: SensorU
             }) {
                 Text(text = if (isMonitoringAngles) "Stop Monitoring Angles" else "Start Monitoring Angles")
             }
+//            Spacer(modifier = Modifier.height(16.dp))
+//            Button(onClick = {
+//                timer.runEverySecondForMinute({wifiScan(wifiManager)}) {
+//                    count ->
+//                    resultText = "Valid Scanning Result: $count, Time period 60s.\n Recommended sampling cycle: ${60 / count} s"
+//                }
+//            }) {
+//                Text(text = "Test Wi-Fi Sampling Frequency")
+//            }
             Spacer(modifier = Modifier.height(16.dp))
+            // Select a waypoint to collect data
             Button(onClick = {
-                timer.runEverySecondForMinute({wifiScan(wifiManager)}) {
-                    count ->
-                    resultText = "Valid Scanning Result: $count, Time period 60s.\n Recommended sampling cycle: ${60 / count} s"
-                }
+                selectorExpanded = true
             }) {
-                Text(text = "Test Wi-Fi Sampling Frequency")
+                if(selectedValue == "") {
+                    Text("Collecting Unlabeled Data")
+                }else{
+                    Text("Collect Waypoint $selectedValue")
+                }
+            }
+            DropdownMenu(expanded = selectorExpanded, onDismissRequest = { selectorExpanded = false }, Modifier.fillMaxWidth()) {
+                DropdownMenuItem(text={Text("Unlabeled Data")},onClick = {
+                    selectedValue = ""
+                    selectorExpanded = false
+                })
+                for ((index, waypoint) in waypoints.withIndex()) {
+                    DropdownMenuItem(text={Text("Waypoint ${index+1}: ${waypoint.x}, ${waypoint.y}")},onClick = {
+                        selectedValue = "${index+1}"
+                        selectorExpanded = false
+                    })
+                }
             }
             Spacer(modifier = Modifier.height(16.dp))
             TextField(
@@ -268,12 +395,23 @@ fun SampleWidget(context: SensorUtils.SensorDataListener, sensorManager: SensorU
                         val wifiFrequency = wifiFreq.toDouble()
                         val sensorFrequency = sensorFreq.toDouble()
                         setStartSamplingTime(currentTime)
+                        if(selectedValue != "") {
+                            dirName = "Waypoint-${selectedValue}-$currentTime"
+                        }
                         timer.runSensorTaskAtFrequency(sensorManager, sensorFrequency, currentTime, dirName) {
                             Log.d("Sensor Finished", "Sampling finished, successful samples: $it")
                         }
-                        timer.runWifiTaskAtFrequency(wifiManager, wifiFrequency, currentTime, dirName) {
-                            Log.d("WiFi Finished", "Wi-Fi sampling finished, successful samples: $it")
+                        if (selectedValue != ""){
+                            val waypointPosition = waypoints[selectedValue.toInt() - 1]
+                            timer.runWifiTaskAtFrequency(wifiManager, wifiFrequency, currentTime, dirName, collectWaypoint = true, waypointPosition = waypointPosition) {
+                                Log.d("WiFi Finished", "Wi-Fi sampling finished for waypoint $selectedValue, successful samples: $it")
+                            }
+                        }else{
+                            timer.runWifiTaskAtFrequency(wifiManager, wifiFrequency, currentTime, dirName) {
+                                Log.d("WiFi Finished", "Wi-Fi sampling finished, successful samples: $it")
+                            }
                         }
+
                         sensorManager.startMonitoring(context)
                         isSampling = true  // 切换为正在采样的状态
                     } else {
@@ -293,6 +431,263 @@ fun SampleWidget(context: SensorUtils.SensorDataListener, sensorManager: SensorU
                 Text(text = if (isSampling) "Stop Sampling" else "Start Sampling")
             }
         }
+}
+
+@Composable
+fun InferenceScreen(wifiManager: WifiManager,
+                    yaw: Float,
+                    waypoints: SnapshotStateList<Offset>) {
+    var scaleFactor by remember { mutableFloatStateOf(5f) }
+
+    // Shaking Time (ms)
+    val shakingTime = 20
+    var startTime = System.currentTimeMillis()
+    var accumulatedOffset by remember { mutableStateOf(Offset.Zero) }
+    var accumulatedScaleFactor by remember { mutableFloatStateOf(1f) }
+    val configuration = LocalConfiguration.current
+
+    // Retrieve screen width and height
+    val screenWidthPx = with(LocalDensity.current) {configuration.screenWidthDp.dp.toPx()}
+    val screenHeightPx = with(LocalDensity.current) {configuration.screenHeightDp.dp.toPx()}
+
+    // We will map the map width to the screen width: pxRatio m/px
+    val widthLength = 269.35f
+    val meterPerPixel = widthLength / screenWidthPx
+
+    // Variables to handle gestures
+    val moveRedBirdToCenterOffset = IntOffset(-(screenWidthPx/100.0f).toInt(), -(screenHeightPx/9.6f).toInt()) * 5f
+    var markerOffset by remember { mutableStateOf(Offset(0f, 0f)) }
+    var mapDragOffset by remember { mutableStateOf(IntOffset(0, 0)) }
+
+    // Variables to handle positional change
+    var positionOffset by remember { mutableStateOf(Offset.Zero) }
+    var previousPositionOffset by remember { mutableStateOf(Offset.Zero) }
+
+    // Use for the Tip window to save the waypoint
+    var showTipWindow by remember { mutableStateOf(false) }
+    var tipPosition by remember { mutableStateOf(Offset(0f, 0f)) }
+    var canvasSize by remember { mutableStateOf(Offset(0f, 0f)) } // Store canvas size
+
+
+    Box(modifier = Modifier
+        .fillMaxSize()
+        .pointerInput(Unit) {
+            detectTapGestures(
+                onLongPress = { offset ->
+                    showTipWindow = true
+                    tipPosition = offset // Capture the position
+                }
+            )
+        }
+        .pointerInput(Unit) {
+            // Detect transform gestures
+            detectTransformGestures { _, pan, zoom, _ ->
+                showTipWindow = false
+                val previousScaleFactor = scaleFactor
+                scaleFactor = kotlin.math.min(6.0f, scaleFactor * zoom)
+                scaleFactor = kotlin.math.max(1.5f, scaleFactor * zoom)
+                accumulatedScaleFactor *= (scaleFactor / previousScaleFactor)
+                // Handle Pan
+                var currentTime = System.currentTimeMillis()
+                if (currentTime - startTime > shakingTime) {
+                    // Handle More Logics Here
+                    mapDragOffset = IntOffset(
+                        (mapDragOffset.x + accumulatedOffset.x).roundToInt(),
+                        (mapDragOffset.y + accumulatedOffset.y).roundToInt()
+                    )
+                    markerOffset =
+                        (markerOffset - moveRedBirdToCenterOffset.toOffset() - mapDragOffset.toOffset()) * accumulatedScaleFactor + moveRedBirdToCenterOffset.toOffset() + mapDragOffset.toOffset() + accumulatedOffset
+                    startTime = currentTime
+                    accumulatedOffset = Offset.Zero
+                    accumulatedScaleFactor = 1f
+                }
+                accumulatedOffset = Offset(accumulatedOffset.x + pan.x, accumulatedOffset.y + pan.y)
+            }
+        }
+    ) {
+
+        // Background image of the map
+        Image(
+            painter = painterResource(id = R.drawable.floormap),
+            contentDescription = null,
+            modifier = Modifier
+                .fillMaxSize()
+                .offset { moveRedBirdToCenterOffset + mapDragOffset }
+                .scale(scaleFactor)
+        )
+
+        // Notice that here we use the red bird as the zero point
+        Canvas(modifier = Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { coordinates ->
+                val size = coordinates.size // Get the size of the canvas
+                canvasSize = Offset(size.width.toFloat(), size.height.toFloat())
+            }
+        ) {
+            // Convert Position into Pixel Offset
+            val positionDelta = positionOffset - previousPositionOffset
+            val deltaPixels = positionDelta / meterPerPixel * scaleFactor
+            previousPositionOffset = positionOffset
+            markerOffset += deltaPixels
+            // (0, 0) -> RedBird; Unit: Screen Pixel
+            drawUserMarker(this, markerOffset.x, markerOffset.y, yaw)
+            // waypoints
+            drawWaypoints(this, meterPerPixel,scaleFactor, screenWidthPx, screenHeightPx, markerOffset, positionOffset, waypoints)
+        }
+
+        if(showTipWindow){
+            Canvas(modifier = Modifier
+                .offset { IntOffset(tipPosition.x.toInt(), tipPosition.y.toInt()) }){
+                this.drawCircle(
+                    color = Color(0xFFC7D3DD), // Glow color: #77B6EA
+                    radius = 25f,
+                )
+            }
+            FilledCardExample(tipPosition,
+                onConfirm = {
+                    val pointToMarker = tipPosition - markerOffset - Offset(canvasSize.x / 2, canvasSize.y / 2)
+                    val realOffset = pointToMarker / scaleFactor * meterPerPixel
+                    waypoints.add(realOffset + positionOffset)
+                    showTipWindow = false
+                    Log.d("Map", "New waypoint ${realOffset.x}, ${realOffset.y}")
+                },
+                onDismiss = { showTipWindow = false }
+            )
+        }
+    }
+
+    // A dummy position updater
+    LaunchedEffect(Unit) {
+        val fps = 60
+        val periodTime = 3000
+        while (true) {
+            val (wifiResults, success) = wifiScan(wifiManager)
+            if(success){
+                val targetOffset = predict(wifiResults)
+                Log.d("Map", "Wifi Scan Results: $wifiResults")
+                val totalFrames = periodTime / 1000 * fps
+                val step = (targetOffset - positionOffset) / totalFrames.toFloat()
+                for (i in 0..totalFrames){
+                    positionOffset += step
+                    delay((1000 / fps).toLong())
+                }
+            }
+        }
+    }
+}
+
+fun predict(wifiResults: String): Offset {
+    // TODO Complete Prediction Code Here
+    return Offset.Zero
+}
+
+fun drawUserMarker(drawScope: DrawScope,
+                   x: Float, y: Float,
+                   direction: Float,
+                   alpha: Float=1.0f) {
+    val centerX = x + drawScope.center.x
+    val centerY = y + drawScope.center.y
+    // Radius
+    val innerRadius = 35f
+    val outerRadius = 40f
+    // Draw triangle for direction
+    val originAngle = Math.toRadians(120f.toDouble())
+    val directionAngle = Math.toRadians((direction+180).toDouble())
+
+    // Calculate the points of the triangle based on direction
+    val triangleHeight = innerRadius / cos(originAngle / 2).toFloat()
+    val tipX = centerX + triangleHeight * cos(directionAngle).toFloat()
+    val tipY = centerY + triangleHeight * sin(directionAngle).toFloat()
+
+    val leftBaseX = centerX + innerRadius * cos(directionAngle + originAngle / 2).toFloat()
+    val leftBaseY = centerY + innerRadius * sin(directionAngle + originAngle / 2).toFloat()
+
+    val rightBaseX = centerX + innerRadius * cos(directionAngle - originAngle / 2).toFloat()
+    val rightBaseY = centerY + innerRadius * sin(directionAngle - originAngle / 2).toFloat()
+
+    // Create a path for the triangle
+    val path = Path().apply {
+        moveTo(tipX, tipY) // Move to tip of the triangle
+        lineTo(leftBaseX, leftBaseY) // Left bottom corner
+        lineTo(rightBaseX, rightBaseY) // Right bottom corner
+        close() // Close the path to form a triangle
+    }
+
+    // Draw the triangle
+    drawScope.drawPath(
+        path = path,
+        color = Color(0xFF77B6EA).copy(alpha=alpha) // Fill color
+    )
+
+    // Draw the triangle outline
+    drawScope.drawPath(
+        path = path,
+        color = Color(0xFFE8EEF2).copy(alpha=alpha), // Outline color
+        style = androidx.compose.ui.graphics.drawscope.Stroke(width = outerRadius - innerRadius)
+    )
+
+    // Outer glow
+    drawScope.drawCircle(
+        color = Color(0xFFE8EEF2).copy(alpha=alpha),
+        radius = outerRadius, // Larger radius for greater glow
+        center = Offset(centerX, centerY)
+    )
+    // Inner glow
+    drawScope.drawCircle(
+        color = Color(0xFF77B6EA).copy(alpha=alpha), // Glow color: #77B6EA
+        radius = innerRadius, // Radius of glow
+        center = Offset(centerX, centerY)
+    )
+}
+
+fun drawWaypoints(drawScope: DrawScope, meterPerPixel: Float, scaleFactor: Float,
+                  screenWidth: Float, screenHeight: Float,
+                  markerOffset: Offset, positionOffset: Offset,
+                  waypoints: SnapshotStateList<Offset>){
+    var index = 0
+    for(waypoint in waypoints){
+        index += 1
+        val realDelta = waypoint - positionOffset
+        val pixelDelta = realDelta / meterPerPixel * scaleFactor
+        Log.d("Map", "Pixel Delta: ${pixelDelta.x}, ${pixelDelta.y}")
+        var drawPosition = pixelDelta + markerOffset + drawScope.center
+        drawScope.drawCircle(
+            color = Color(0xFFC7D3DD),
+            radius = 20f, // Radius of glow
+            center = drawPosition
+        )
+        drawScope.drawContext.canvas.nativeCanvas.apply {
+            drawText(
+                index.toString(), // Convert the index to string
+                drawPosition.x + 6 * scaleFactor,
+                drawPosition.y + 6 * scaleFactor,
+                Paint().apply {
+                    color = android.graphics.Color.parseColor("#C7D3DD") // Set the desired text color
+                    textSize = 50f // Set the desired text size
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun FilledCardExample(offset: Offset, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    Card(
+        colors = CardColors(Color.White, Color(0xFF77B6EA), Color(0xFF77B6EA), Color(0xFF77B6EA)),
+        modifier = Modifier
+            .offset { IntOffset(offset.x.roundToInt(), offset.y.roundToInt()) }
+            .padding(5.dp)
+    ) {
+        Text(text = "Add waypoint?")
+        Row {
+            Button(onClick = onConfirm, Modifier.padding(5.dp)) {
+                Text("Yes")
+            }
+            Button(onClick = onDismiss, Modifier.padding(5.dp)) {
+                Text("No")
+            }
+        }
+    }
 }
 
 class SensorUtils(context: Context): SensorEventListener {
@@ -463,7 +858,9 @@ class TimerUtils(private val context: Context) {
         frequencyY: Double, // Wi-Fi 采集频率 (秒)
         timestamp: String,
         dirName: String,
-        onComplete: (Int) -> Unit
+        collectWaypoint: Boolean = false,
+        waypointPosition: Offset = Offset(0f, 0f),
+        onComplete: (Int) -> Unit,
     ) {
         var successCounter = 0
         var dir = File(context.getExternalFilesDir(null), timestamp)
@@ -485,6 +882,9 @@ class TimerUtils(private val context: Context) {
                     successCounter++
                     try {
                         val wifiWriter = FileWriter(wifiFile, true)
+                        if(collectWaypoint) {
+                            wifiWriter.append("${waypointPosition.x}, ${waypointPosition.y}\n")
+                        }
                         wifiWriter.append("$wifiResults\n")
                         wifiWriter.flush()
                         wifiWriter.close()
