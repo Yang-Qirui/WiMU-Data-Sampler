@@ -55,6 +55,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Environment
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -62,7 +63,7 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.mutableFloatStateOf
-
+import android.view.WindowManager
 import androidx.navigation.NavController
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -78,9 +79,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardColors
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Slider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
@@ -90,19 +92,24 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.draw
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.toOffset
 import kotlinx.coroutines.delay
-import kotlin.coroutines.coroutineContext
 import kotlin.math.cos
 import kotlin.math.sin
-
+import io.ktor.client.*
+import io.ktor.client.engine.cio.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import kotlinx.coroutines.*
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 
 class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private lateinit var motionSensorManager: SensorUtils
@@ -119,7 +126,8 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var showStepCountDialog by mutableStateOf(false)  // 控制弹窗显示状态
     private var stepCount by mutableFloatStateOf(0f)  // 保存步数值
     private var waypoints = mutableStateListOf<Offset>()
-
+    private var targetOffset = mutableStateListOf(Offset.Zero)
+    private var beta by mutableFloatStateOf(1.0f)
 
     @RequiresApi(Build.VERSION_CODES.Q)
     private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()){
@@ -151,11 +159,47 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         Manifest.permission.ACTIVITY_RECOGNITION
     )
 
+    private val scope = CoroutineScope(Dispatchers.IO)
+    private fun startFetching() {
+        scope.launch {
+            while (true) {
+                val (wifiResults, success) = wifiScan(wifiManager)
+                if (success) {
+//                    Log.d("Map", "Wifi Scan Results: $wifiResults")
+                    Log.d("BETA", beta.toString())
+                    try {
+                        val response = NetworkClient.fetchData(wifiResults)
+                        val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
+                        targetOffset[0] = Offset((beta * coordinate.x + (1 - beta) * targetOffset[0].component1()).toFloat(),
+                            (beta * coordinate.y + (1 - beta) * targetOffset[0].component2()).toFloat()
+                        )
+                        Log.d("response", response.bodyAsText())
+                    }
+                    catch (e: Exception) {
+                        Log.e("Http exception", e.toString())
+                    }
+                }
+                delay(3000)
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        scope.cancel()
+        unregisterReceiver(wifiScanReceiver)
+    }
+
+    private fun getBetaValue(): Float {
+        return beta
+    }
+
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestNextPermission()
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         enableEdgeToEdge()
         setContent {
@@ -189,11 +233,13 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 roll = roll,
                                 isMonitoringAngles = isMonitoringAngles,
                                 toggleMonitoringAngles = { toggleAngleMonitoring() },
-                                waypoints = waypoints
+                                waypoints = waypoints,
+                                changeBeta = {value -> beta = value},
+                                getBeta = { getBetaValue() }
                             )
                         }
                         composable("inference") {
-                            InferenceScreen(wifiManager=wifiManager, yaw = yaw, waypoints=waypoints)
+                            InferenceScreen(targetOffset =targetOffset, yaw = yaw, waypoints =waypoints)
                         }
                     }
                 }
@@ -240,6 +286,57 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     }
 }
 
+@Serializable
+data class WifiEntry(
+    val timestamp: Long,
+    val bssid: String,
+    val ssid: String?,  // SSID可以为空
+    val frequency: Int,
+    val rssi: Int
+)
+
+@Serializable
+data class Coordinate(
+    val x: Float,
+    val y: Float
+)
+
+object NetworkClient {
+    private val client = HttpClient(CIO)
+
+    fun parseWifiData(input: String): List<WifiEntry> {
+        return input.lines().mapNotNull { line ->
+            val parts = line.split(" ")
+            if (parts.size >= 5) { // 确保有足够的部分
+                try {
+                    val timestamp = parts[0].toLong() // 第一个是时间戳
+                    val bssid = parts[2] // 第三个是BSSID
+                    val frequency = parts[3].toInt() // 第四个是频率
+                    val rssi = parts[4].toInt() // 第五个是RSSI
+
+                    // 将ssid设置为parts[1]，如果它为空，则为null
+                    val ssid = if (parts[1].isEmpty()) null else parts[1]
+
+                    WifiEntry(timestamp, bssid, ssid, frequency, rssi)
+                } catch (e: Exception) {
+                    null // 解析错误，返回null
+                }
+            } else {
+                null // 如果部分不足，返回null
+            }
+        }
+    }
+
+    suspend fun fetchData(wifiResult: String): HttpResponse {
+        val wifiEntries = parseWifiData(wifiResult.trimIndent())
+        Log.d("monitor", wifiEntries.toString())
+        return client.post("http://limcpu1.cse.ust.hk:7860/wimu/echo") {
+            contentType(ContentType.Application.Json)
+            setBody(Json.encodeToString(wifiEntries))
+        }
+    }
+}
+
 // Navigation Bar for pages: Data Visualization and Data Collecting
 @Composable
 fun BottomNavigationBar(navController: NavController) {
@@ -274,15 +371,18 @@ fun SampleWidget(context: SensorUtils.SensorDataListener,
                  yaw: Float, pitch: Float, roll: Float,
                  isMonitoringAngles: Boolean,
                  toggleMonitoringAngles: () -> Unit,
-                 waypoints: SnapshotStateList<Offset>) {
+                 waypoints: SnapshotStateList<Offset>,
+                 changeBeta: (Float) -> Unit,
+                 getBeta: () -> Float
+                 ) {
         var resultText by remember {
             mutableStateOf("Scanning Result: 0")
         }
         var wifiFreq by remember {
-            mutableStateOf("")
+            mutableStateOf("15")
         }
         var sensorFreq by remember {
-            mutableStateOf("")
+            mutableStateOf("0.05")
         }
         var isSampling by remember {
             mutableStateOf(false)
@@ -301,8 +401,17 @@ fun SampleWidget(context: SensorUtils.SensorDataListener,
 //            Spacer(modifier = Modifier.height(16.dp))
 //            Text(text = "Yaw: ${yaw.toInt()}°")
 //            Text(text = "Pitch: ${pitch.toInt()}°")
-//            Text(text = "Roll: ${roll.toInt()}°")
+            Text(text = "Beta: ${getBeta()}")
 //            Spacer(modifier = Modifier.height(16.dp))
+            Slider(
+                value = getBeta(),
+                onValueChange = { newValue ->
+                    changeBeta(newValue)
+                },
+                valueRange = 0f..1f, // 定义值的范围
+                steps = 19, // 如果想要均匀分布的10个步，设置步数为9
+            )
+
             Button(onClick = { toggleMonitoringAngles() }, colors = if (isMonitoringAngles) {
                 ButtonDefaults.buttonColors(containerColor = Color.Red )
             } else {
@@ -310,15 +419,6 @@ fun SampleWidget(context: SensorUtils.SensorDataListener,
             }) {
                 Text(text = if (isMonitoringAngles) "Stop Monitoring Angles" else "Start Monitoring Angles")
             }
-//            Spacer(modifier = Modifier.height(16.dp))
-//            Button(onClick = {
-//                timer.runEverySecondForMinute({wifiScan(wifiManager)}) {
-//                    count ->
-//                    resultText = "Valid Scanning Result: $count, Time period 60s.\n Recommended sampling cycle: ${60 / count} s"
-//                }
-//            }) {
-//                Text(text = "Test Wi-Fi Sampling Frequency")
-//            }
             Spacer(modifier = Modifier.height(16.dp))
             // Select a waypoint to collect data
             Button(onClick = {
@@ -434,9 +534,10 @@ fun SampleWidget(context: SensorUtils.SensorDataListener,
 }
 
 @Composable
-fun InferenceScreen(wifiManager: WifiManager,
-                    yaw: Float,
-                    waypoints: SnapshotStateList<Offset>) {
+fun InferenceScreen(
+    targetOffset: SnapshotStateList<Offset>,
+    yaw: Float,
+    waypoints: SnapshotStateList<Offset>) {
     var scaleFactor by remember { mutableFloatStateOf(5f) }
 
     // Shaking Time (ms)
@@ -451,7 +552,7 @@ fun InferenceScreen(wifiManager: WifiManager,
     val screenHeightPx = with(LocalDensity.current) {configuration.screenHeightDp.dp.toPx()}
 
     // We will map the map width to the screen width: pxRatio m/px
-    val widthLength = 269.35f
+    val widthLength = 277f
     val meterPerPixel = widthLength / screenWidthPx
 
     // Variables to handle gestures
@@ -488,7 +589,7 @@ fun InferenceScreen(wifiManager: WifiManager,
                 scaleFactor = kotlin.math.max(1.5f, scaleFactor * zoom)
                 accumulatedScaleFactor *= (scaleFactor / previousScaleFactor)
                 // Handle Pan
-                var currentTime = System.currentTimeMillis()
+                val currentTime = System.currentTimeMillis()
                 if (currentTime - startTime > shakingTime) {
                     // Handle More Logics Here
                     mapDragOffset = IntOffset(
@@ -508,7 +609,7 @@ fun InferenceScreen(wifiManager: WifiManager,
 
         // Background image of the map
         Image(
-            painter = painterResource(id = R.drawable.floormap),
+            painter = painterResource(id = R.drawable.academic_building_g),
             contentDescription = null,
             modifier = Modifier
                 .fillMaxSize()
@@ -561,24 +662,15 @@ fun InferenceScreen(wifiManager: WifiManager,
         val fps = 60
         val periodTime = 3000
         while (true) {
-            val (wifiResults, success) = wifiScan(wifiManager)
-            if(success){
-                val targetOffset = predict(wifiResults)
-                Log.d("Map", "Wifi Scan Results: $wifiResults")
-                val totalFrames = periodTime / 1000 * fps
-                val step = (targetOffset - positionOffset) / totalFrames.toFloat()
-                for (i in 0..totalFrames){
-                    positionOffset += step
-                    delay((1000 / fps).toLong())
-                }
+            val totalFrames = periodTime / 1000 * fps
+            Log.i("offset", targetOffset.toString())
+            val step = (targetOffset[0] - positionOffset) / totalFrames.toFloat()
+            for (i in 0..totalFrames) {
+                positionOffset += step
+                delay((1000 / fps).toLong())
             }
         }
     }
-}
-
-fun predict(wifiResults: String): Offset {
-    // TODO Complete Prediction Code Here
-    return Offset.Zero
 }
 
 fun drawUserMarker(drawScope: DrawScope,
@@ -782,10 +874,14 @@ class TimerUtils(private val context: Context) {
         dirName: String,
         onComplete: (Int) -> Unit
     ) {
+        val mainDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
+        if (!mainDir.exists()) {
+            mainDir.mkdirs()
+        }
         var successCounter = 0
-        var dir = File(context.getExternalFilesDir(null), timestamp)
+        var dir = File(mainDir, timestamp)
         if (dirName != "") {
-            dir = File(context.getExternalFilesDir(null), dirName)
+            dir = File(mainDir, dirName)
         }
         if (!dir.exists()) {
             dir.mkdirs()
@@ -862,10 +958,14 @@ class TimerUtils(private val context: Context) {
         waypointPosition: Offset = Offset(0f, 0f),
         onComplete: (Int) -> Unit,
     ) {
+        val mainDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
+        if (!mainDir.exists()) {
+            mainDir.mkdirs()
+        }
         var successCounter = 0
-        var dir = File(context.getExternalFilesDir(null), timestamp)
+        var dir = File(mainDir, timestamp)
         if (dirName != "") {
-            dir = File(context.getExternalFilesDir(null), dirName)
+            dir = File(mainDir, dirName)
         }
         if (!dir.exists()) {
             dir.mkdirs()
