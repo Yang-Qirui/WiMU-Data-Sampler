@@ -585,8 +585,8 @@ fun InferenceScreen(
             detectTransformGestures { _, pan, zoom, _ ->
                 showTipWindow = false
                 val previousScaleFactor = scaleFactor
-                scaleFactor = kotlin.math.min(6.0f, scaleFactor * zoom)
-                scaleFactor = kotlin.math.max(1.5f, scaleFactor * zoom)
+                scaleFactor = kotlin.math.min(5.0f, scaleFactor * zoom)
+                scaleFactor = kotlin.math.max(5.0f, scaleFactor * zoom)
                 accumulatedScaleFactor *= (scaleFactor / previousScaleFactor)
                 // Handle Pan
                 val currentTime = System.currentTimeMillis()
