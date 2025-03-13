@@ -10,7 +10,6 @@ import android.graphics.Paint
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -64,6 +63,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.mutableFloatStateOf
 import android.view.WindowManager
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.navigation.NavController
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -75,13 +75,13 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.compose.foundation.layout.offset
+import androidx.compose.material.icons.rounded.AccessibilityNew
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardColors
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Slider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.draw.scale
@@ -110,15 +110,22 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
+import org.ejml.simple.SimpleMatrix
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.*
+
 
 class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private lateinit var motionSensorManager: SensorUtils
     private lateinit var wifiManager: WifiManager
     private lateinit var wifiScanReceiver: BroadcastReceiver
     private lateinit var timer: TimerUtils
+    private var filter: KalmanFilter4WiFiIMU = KalmanFilter4WiFiIMU(0f, 0f, 0f, 0f)
+
     private var startSamplingTime: String = ""
     private var lastRotationVector: FloatArray? = null
     private var lastStepCount: Float? = null
+    private var lastAcc: FloatArray? = null
     private var yaw by mutableFloatStateOf(0f)
     private var pitch by mutableFloatStateOf(0f)
     private var roll by mutableFloatStateOf(0f)
@@ -126,6 +133,8 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var showStepCountDialog by mutableStateOf(false)  // 控制弹窗显示状态
     private var stepCount by mutableFloatStateOf(0f)  // 保存步数值
     private var waypoints = mutableStateListOf<Offset>()
+    private var trackingWaypoints = mutableStateListOf<Offset>()
+    private var observeOffset = Offset.Zero
     private var targetOffset = mutableStateListOf(Offset.Zero)
     private var beta by mutableFloatStateOf(1.0f)
 
@@ -156,24 +165,28 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         Manifest.permission.READ_EXTERNAL_STORAGE,
         Manifest.permission.ACCESS_WIFI_STATE,
         Manifest.permission.CHANGE_WIFI_STATE,
-        Manifest.permission.ACTIVITY_RECOGNITION
+        Manifest.permission.ACTIVITY_RECOGNITION,
+        Manifest.permission.HIGH_SAMPLING_RATE_SENSORS
     )
 
     private val scope = CoroutineScope(Dispatchers.IO)
+    private val imuScope = CoroutineScope(Dispatchers.IO)
     private fun startFetching() {
         scope.launch {
             while (true) {
                 val (wifiResults, success) = wifiScan(wifiManager)
                 if (success) {
-//                    Log.d("Map", "Wifi Scan Results: $wifiResults")
-                    Log.d("BETA", beta.toString())
+                    Log.d("Map", "Wifi Scan Results")
+//                    Log.d("BETA", beta.toString())
                     try {
-                        val response = NetworkClient.fetchData(wifiResults)
-                        val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
-                        targetOffset[0] = Offset((beta * coordinate.x + (1 - beta) * targetOffset[0].component1()).toFloat(),
-                            (beta * coordinate.y + (1 - beta) * targetOffset[0].component2()).toFloat()
-                        )
-                        Log.d("response", response.bodyAsText())
+//                        val response = NetworkClient.fetchData(wifiResults)
+//                        val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
+////                        targetOffset[0] = Offset((beta * coordinate.x + (1 - beta) * targetOffset[0].component1()).toFloat(),
+////                            (beta * coordinate.y + (1 - beta) * targetOffset[0].component2()).toFloat()
+////                        )
+////                        observeOffset = Offset(coordinate.x, coordinate.y)
+////                        filter.initCoor(SimpleMatrix(arrayOf(floatArrayOf(observeOffset.x, observeOffset.y))))
+//                        Log.d("response", response.bodyAsText())
                     }
                     catch (e: Exception) {
                         Log.e("Http exception", e.toString())
@@ -182,11 +195,56 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                 delay(3000)
             }
         }
+        imuScope.launch {
+            while (true) {
+                Log.d("Map", "IMU Scan Results")
+                try {
+
+                } catch (e: Exception) {
+                    Log.e("Http exception", e.toString())
+                }
+                delay(3000)
+            }
+        }
     }
+
+    private fun endFetching() {
+        scope.cancel()
+        imuScope.cancel()
+    }
+//
+//    private fun startKalmanFilter() {
+//        motionSensorManager.startMonitoring(this)
+//        var lastTargetOffset: Offset? = null
+//        val timeInterval = 0.5f
+//        scope.launch {
+//            while (true) {
+////                val lastStepCount = motionSensorManager.getLastStepCount()
+//                val lastAcc = motionSensorManager.getLastAcc()
+//                Log.d("StepCountAndAcc", lastAcc.toString())
+//                if (lastStepCount != null && lastAcc != null) {
+//                    val u =
+//                        SimpleMatrix(arrayOf(floatArrayOf(0.5f * lastAcc[0] * timeInterval.pow(2), 0.5f * lastAcc[1] * timeInterval.pow(2))))
+//                    var predictCoor: SimpleMatrix?
+//                    if (lastTargetOffset != null && observeOffset != lastTargetOffset) { // wifi fingerprint prediction updated
+//                        val obs = SimpleMatrix(arrayOf(floatArrayOf(targetOffset[0].x, targetOffset[0].y)))
+//                        predictCoor = filter.filter(u, obs)
+//                    } else {
+//                        predictCoor = filter.asyncUpdate(u)
+//                    }
+//                    if (predictCoor != null) {
+//                        targetOffset[0] = Offset(predictCoor[0].toFloat(), predictCoor[1].toFloat())
+//                    }
+//                    lastTargetOffset = targetOffset[0]
+//                }
+//                delay((timeInterval * 1000).toLong())
+//            }
+//        }
+//    }
 
     override fun onDestroy() {
         super.onDestroy()
-        scope.cancel()
+//        scope.cancel()
         unregisterReceiver(wifiScanReceiver)
     }
 
@@ -239,7 +297,10 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                             )
                         }
                         composable("inference") {
-                            InferenceScreen(targetOffset =targetOffset, yaw = yaw, waypoints =waypoints)
+                            InferenceScreen(targetOffset = targetOffset, yaw = yaw, waypoints = waypoints, startFetching = { startFetching() }, endFetching = {endFetching()})
+                        }
+                        composable("Track") {
+                            TrackingScreen(context = this@MainActivity, waypoints = trackingWaypoints, sensorManager = motionSensorManager, wifiManager = wifiManager, timer = timer)
                         }
                     }
                 }
@@ -255,8 +316,11 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         intentFilter.addAction(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
         registerReceiver(wifiScanReceiver, intentFilter, RECEIVER_NOT_EXPORTED)
 
-        timer = TimerUtils(this)
+        timer = TimerUtils(scope, this)
         motionSensorManager = SensorUtils(this)
+    // For runtime inference
+    //        startFetching()
+//        startKalmanFilter()
     }
 
     override fun onRotationVectorChanged(rotationVector: FloatArray) {
@@ -276,6 +340,11 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         showStepCountDialog = true  // 显示弹窗
     }
 
+    override fun onAccChanged(acc: FloatArray) {
+        lastAcc = acc
+        this.lastAcc = acc
+    }
+
     private fun toggleAngleMonitoring() {
         isMonitoringAngles = !isMonitoringAngles
         if (isMonitoringAngles) {
@@ -284,6 +353,55 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
             motionSensorManager.stopMonitoring()
         }
     }
+}
+
+class KalmanFilter4WiFiIMU(
+    devAcc: Float,
+    devPredictX: Float,
+    devPredictY: Float,
+    timeInterval: Float
+    ) {
+    private var x: SimpleMatrix? = null
+    private var P: SimpleMatrix = SimpleMatrix(arrayOf(floatArrayOf(3f, 0f), floatArrayOf(0f, 3f)))
+    private val R: SimpleMatrix = SimpleMatrix(arrayOf(floatArrayOf(devPredictX, 0f), floatArrayOf(0f, devPredictY)))
+    private val tmpDev: Float = 0.125f * timeInterval.pow(4) * devAcc
+    private val Q: SimpleMatrix = SimpleMatrix(arrayOf(floatArrayOf(tmpDev, 0f), floatArrayOf(0f, tmpDev)))
+    private val I: SimpleMatrix = SimpleMatrix(arrayOf(floatArrayOf(1f, 0f), floatArrayOf(0f, 1f)))
+
+    fun initCoor(newX: SimpleMatrix) {
+        if (this.x == null) {
+            this.x = newX
+        }
+    }
+
+    fun asyncUpdate(u: SimpleMatrix): SimpleMatrix? {
+        val lastX: SimpleMatrix? = this.x
+        if (lastX != null) {
+            val xMinus = lastX.plus(u)
+            val P_Minus = this.P + Q
+            this.P = P_Minus
+            this.x = xMinus
+        }
+        return this.x
+    }
+
+    fun filter(u: SimpleMatrix, obs: SimpleMatrix): SimpleMatrix? {
+        val lastX: SimpleMatrix? = this.x
+        val P: SimpleMatrix = this.P
+        if (lastX == null) {
+            return lastX
+        } else {
+            val xMinus = lastX.plus(u)
+            val P_minus = P + this.Q
+            val K = P_minus.mult((P_minus.plus(this.R)).invert())
+            val newX = xMinus.plus(K.mult(obs.minus(xMinus)))
+            val newP = (this.I.minus(K)).mult(P_minus)
+            this.x = newX
+            this.P = newP
+            return this.x
+        }
+    }
+
 }
 
 @Serializable
@@ -335,6 +453,8 @@ object NetworkClient {
             setBody(Json.encodeToString(wifiEntries))
         }
     }
+
+
 }
 
 // Navigation Bar for pages: Data Visualization and Data Collecting
@@ -357,6 +477,14 @@ fun BottomNavigationBar(navController: NavController) {
                 navController.navigate("inference")
             }
         )
+        NavigationBarItem(
+            icon = { Icon(Icons.Rounded.AccessibilityNew, contentDescription = "Track") },
+            label = { Text("Track") },
+            selected = false, // You can change this dynamically
+            onClick = {
+                navController.navigate("track")
+            }
+        )
     }
 
 }
@@ -375,9 +503,7 @@ fun SampleWidget(context: SensorUtils.SensorDataListener,
                  changeBeta: (Float) -> Unit,
                  getBeta: () -> Float
                  ) {
-        var resultText by remember {
-            mutableStateOf("Scanning Result: 0")
-        }
+
         var wifiFreq by remember {
             mutableStateOf("15")
         }
@@ -393,16 +519,12 @@ fun SampleWidget(context: SensorUtils.SensorDataListener,
 
         var selectorExpanded by remember { mutableStateOf(false) }
         var selectedValue by remember { mutableStateOf("") }
+        val scope = CoroutineScope(Dispatchers.Main)
 
         Column (modifier = Modifier
             .padding(padding)
             .fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-//            Text(text = resultText)
-//            Spacer(modifier = Modifier.height(16.dp))
-//            Text(text = "Yaw: ${yaw.toInt()}°")
-//            Text(text = "Pitch: ${pitch.toInt()}°")
             Text(text = "Beta: ${getBeta()}")
-//            Spacer(modifier = Modifier.height(16.dp))
             Slider(
                 value = getBeta(),
                 onValueChange = { newValue ->
@@ -412,13 +534,6 @@ fun SampleWidget(context: SensorUtils.SensorDataListener,
                 steps = 19, // 如果想要均匀分布的10个步，设置步数为9
             )
 
-            Button(onClick = { toggleMonitoringAngles() }, colors = if (isMonitoringAngles) {
-                ButtonDefaults.buttonColors(containerColor = Color.Red )
-            } else {
-                ButtonDefaults.buttonColors()
-            }) {
-                Text(text = if (isMonitoringAngles) "Stop Monitoring Angles" else "Start Monitoring Angles")
-            }
             Spacer(modifier = Modifier.height(16.dp))
             // Select a waypoint to collect data
             Button(onClick = {
@@ -498,17 +613,50 @@ fun SampleWidget(context: SensorUtils.SensorDataListener,
                         if(selectedValue != "") {
                             dirName = "Waypoint-${selectedValue}-$currentTime"
                         }
-                        timer.runSensorTaskAtFrequency(sensorManager, sensorFrequency, currentTime, dirName) {
-                            Log.d("Sensor Finished", "Sampling finished, successful samples: $it")
+                        scope.launch {
+                            timer.runSensorTaskAtFrequency(
+                                sensorManager,
+                                sensorFrequency,
+                                currentTime,
+                                dirName,
+                                "point"
+                            ) {
+                                Log.d(
+                                    "Sensor Finished",
+                                    "Sampling finished, successful samples: $it"
+                                )
+                            }
                         }
                         if (selectedValue != ""){
                             val waypointPosition = waypoints[selectedValue.toInt() - 1]
-                            timer.runWifiTaskAtFrequency(wifiManager, wifiFrequency, currentTime, dirName, collectWaypoint = true, waypointPosition = waypointPosition) {
-                                Log.d("WiFi Finished", "Wi-Fi sampling finished for waypoint $selectedValue, successful samples: $it")
+                            scope.launch {
+                                timer.runWifiTaskAtFrequency(
+                                    wifiManager,
+                                    wifiFrequency,
+                                    currentTime,
+                                    dirName,
+                                    true,
+                                    getWaypoint = { waypointPosition }) {
+                                    Log.d(
+                                        "WiFi Finished",
+                                        "Wi-Fi sampling finished for waypoint $selectedValue, successful samples: $it"
+                                    )
+                                }
                             }
                         }else{
-                            timer.runWifiTaskAtFrequency(wifiManager, wifiFrequency, currentTime, dirName) {
-                                Log.d("WiFi Finished", "Wi-Fi sampling finished, successful samples: $it")
+                            scope.launch {
+                                timer.runWifiTaskAtFrequency(
+                                    wifiManager,
+                                    wifiFrequency,
+                                    currentTime,
+                                    dirName,
+                                    false
+                                ) {
+                                    Log.d(
+                                        "WiFi Finished",
+                                        "Wi-Fi sampling finished, successful samples: $it"
+                                    )
+                                }
                             }
                         }
 
@@ -537,7 +685,179 @@ fun SampleWidget(context: SensorUtils.SensorDataListener,
 fun InferenceScreen(
     targetOffset: SnapshotStateList<Offset>,
     yaw: Float,
-    waypoints: SnapshotStateList<Offset>) {
+    waypoints: SnapshotStateList<Offset>,
+    startFetching: () -> Unit,
+    endFetching: () -> Unit
+) {
+    var scaleFactor by remember { mutableFloatStateOf(5f) }
+
+    // Shaking Time (ms)
+    val shakingTime = 20
+    var startTime = System.currentTimeMillis()
+    var accumulatedOffset by remember { mutableStateOf(Offset.Zero) }
+    var accumulatedScaleFactor by remember { mutableFloatStateOf(1f) }
+    val configuration = LocalConfiguration.current
+
+    // Retrieve screen width and height
+    val screenWidthPx = with(LocalDensity.current) {configuration.screenWidthDp.dp.toPx()}
+    val screenHeightPx = with(LocalDensity.current) {configuration.screenHeightDp.dp.toPx()}
+
+    // We will map the map width to the screen width: pxRatio m/px
+    val widthLength = 277f
+    val meterPerPixel = widthLength / screenWidthPx
+
+    // Variables to handle gestures
+    val moveRedBirdToCenterOffset = IntOffset(-(screenWidthPx/100.0f).toInt(), -(screenHeightPx/9.6f).toInt()) * 5f
+    var markerOffset by remember { mutableStateOf(Offset(0f, 0f)) }
+    var mapDragOffset by remember { mutableStateOf(IntOffset(0, 0)) }
+
+    // Variables to handle positional change
+    var positionOffset by remember { mutableStateOf(Offset.Zero) }
+    var previousPositionOffset by remember { mutableStateOf(Offset.Zero) }
+
+    // Use for the Tip window to save the waypoint
+    var showTipWindow by remember { mutableStateOf(false) }
+    var tipPosition by remember { mutableStateOf(Offset(0f, 0f)) }
+    var canvasSize by remember { mutableStateOf(Offset(0f, 0f)) } // Store canvas size
+    var clicked by remember { mutableStateOf(false) }
+
+    Column (modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Box(modifier = Modifier
+            .fillMaxSize(0.8f)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onLongPress = { offset ->
+                        showTipWindow = true
+                        tipPosition = offset // Capture the position
+                    }
+                )
+            }
+            .pointerInput(Unit) {
+                // Detect transform gestures
+                detectTransformGestures { _, pan, zoom, _ ->
+                    showTipWindow = false
+                    val previousScaleFactor = scaleFactor
+                    scaleFactor = kotlin.math.min(5.0f, scaleFactor * zoom)
+                    scaleFactor = kotlin.math.max(5.0f, scaleFactor * zoom)
+                    accumulatedScaleFactor *= (scaleFactor / previousScaleFactor)
+                    // Handle Pan
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - startTime > shakingTime) {
+                        // Handle More Logics Here
+                        mapDragOffset = IntOffset(
+                            (mapDragOffset.x + accumulatedOffset.x).roundToInt(),
+                            (mapDragOffset.y + accumulatedOffset.y).roundToInt()
+                        )
+                        markerOffset =
+                            (markerOffset - moveRedBirdToCenterOffset.toOffset() - mapDragOffset.toOffset()) * accumulatedScaleFactor + moveRedBirdToCenterOffset.toOffset() + mapDragOffset.toOffset() + accumulatedOffset
+                        startTime = currentTime
+                        accumulatedOffset = Offset.Zero
+                        accumulatedScaleFactor = 1f
+                    }
+                    accumulatedOffset =
+                        Offset(accumulatedOffset.x + pan.x, accumulatedOffset.y + pan.y)
+                }
+            }
+        ) {
+
+            // Background image of the map
+            Image(
+                painter = painterResource(id = R.drawable.academic_building_g),
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .offset { moveRedBirdToCenterOffset + mapDragOffset }
+                    .scale(scaleFactor)
+            )
+
+            // Notice that here we use the red bird as the zero point
+            Canvas(modifier = Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { coordinates ->
+                    val size = coordinates.size // Get the size of the canvas
+                    canvasSize = Offset(size.width.toFloat(), size.height.toFloat())
+                }
+            ) {
+                // Convert Position into Pixel Offset
+                val positionDelta = positionOffset - previousPositionOffset
+                val deltaPixels = positionDelta / meterPerPixel * scaleFactor
+                previousPositionOffset = positionOffset
+                markerOffset += deltaPixels
+                // (0, 0) -> RedBird; Unit: Screen Pixel
+                drawUserMarker(this, markerOffset.x, markerOffset.y, yaw)
+                // waypoints
+                drawWaypoints(
+                    this,
+                    meterPerPixel,
+                    scaleFactor,
+                    screenWidthPx,
+                    screenHeightPx,
+                    markerOffset,
+                    positionOffset,
+                    waypoints
+                )
+            }
+
+            if (showTipWindow) {
+                Canvas(modifier = Modifier
+                    .offset { IntOffset(tipPosition.x.toInt(), tipPosition.y.toInt()) }) {
+                    this.drawCircle(
+                        color = Color(0xFFFF0000), // Glow color: #77B6EA
+                        radius = 25f,
+                    )
+                }
+                FilledCardExample(tipPosition,
+                    onConfirm = {
+                        val pointToMarker =
+                            tipPosition - markerOffset - Offset(canvasSize.x / 2, canvasSize.y / 2)
+                        val realOffset = pointToMarker / scaleFactor * meterPerPixel
+                        waypoints.add(realOffset + positionOffset)
+                        showTipWindow = false
+                        Log.d("Map", "New waypoint ${realOffset.x}, ${realOffset.y}")
+                    },
+                    onDismiss = { showTipWindow = false }
+                )
+            }
+        }
+        Button(onClick = {
+            if (!clicked) { startFetching()}
+            else { endFetching() }
+            clicked = !clicked
+        }, colors = if (clicked) {
+            ButtonDefaults.buttonColors(containerColor = Color.Red )
+        } else {
+            ButtonDefaults.buttonColors()
+        }) {
+            Text(text = if (clicked) "Stop Tracking" else "Start Tracking")
+        }
+
+        // A dummy position updater
+        LaunchedEffect(Unit) {
+            val fps = 60
+            val periodTime = 3000
+            while (true) {
+                val totalFrames = periodTime / 1000 * fps
+                Log.i("offset", targetOffset.toString())
+                val step = (targetOffset[0] - positionOffset) / totalFrames.toFloat()
+                for (i in 0..totalFrames) {
+                    positionOffset += step
+                    delay((1000 / fps).toLong())
+                }
+            }
+        }
+    }
+
+
+}
+
+@Composable
+fun TrackingScreen(
+    context: SensorUtils.SensorDataListener,
+    waypoints: SnapshotStateList<Offset>,
+    sensorManager: SensorUtils,
+    wifiManager: WifiManager,
+    timer: TimerUtils
+) {
     var scaleFactor by remember { mutableFloatStateOf(5f) }
 
     // Shaking Time (ms)
@@ -569,109 +889,187 @@ fun InferenceScreen(
     var tipPosition by remember { mutableStateOf(Offset(0f, 0f)) }
     var canvasSize by remember { mutableStateOf(Offset(0f, 0f)) } // Store canvas size
 
-
-    Box(modifier = Modifier
-        .fillMaxSize()
-        .pointerInput(Unit) {
-            detectTapGestures(
-                onLongPress = { offset ->
-                    showTipWindow = true
-                    tipPosition = offset // Capture the position
-                }
-            )
-        }
-        .pointerInput(Unit) {
-            // Detect transform gestures
-            detectTransformGestures { _, pan, zoom, _ ->
-                showTipWindow = false
-                val previousScaleFactor = scaleFactor
-                scaleFactor = kotlin.math.min(5.0f, scaleFactor * zoom)
-                scaleFactor = kotlin.math.max(5.0f, scaleFactor * zoom)
-                accumulatedScaleFactor *= (scaleFactor / previousScaleFactor)
-                // Handle Pan
-                val currentTime = System.currentTimeMillis()
-                if (currentTime - startTime > shakingTime) {
-                    // Handle More Logics Here
-                    mapDragOffset = IntOffset(
-                        (mapDragOffset.x + accumulatedOffset.x).roundToInt(),
-                        (mapDragOffset.y + accumulatedOffset.y).roundToInt()
-                    )
-                    markerOffset =
-                        (markerOffset - moveRedBirdToCenterOffset.toOffset() - mapDragOffset.toOffset()) * accumulatedScaleFactor + moveRedBirdToCenterOffset.toOffset() + mapDragOffset.toOffset() + accumulatedOffset
-                    startTime = currentTime
-                    accumulatedOffset = Offset.Zero
-                    accumulatedScaleFactor = 1f
-                }
-                accumulatedOffset = Offset(accumulatedOffset.x + pan.x, accumulatedOffset.y + pan.y)
-            }
-        }
-    ) {
-
-        // Background image of the map
-        Image(
-            painter = painterResource(id = R.drawable.academic_building_g),
-            contentDescription = null,
-            modifier = Modifier
-                .fillMaxSize()
-                .offset { moveRedBirdToCenterOffset + mapDragOffset }
-                .scale(scaleFactor)
-        )
-
-        // Notice that here we use the red bird as the zero point
-        Canvas(modifier = Modifier
-            .fillMaxSize()
-            .onGloballyPositioned { coordinates ->
-                val size = coordinates.size // Get the size of the canvas
-                canvasSize = Offset(size.width.toFloat(), size.height.toFloat())
-            }
-        ) {
-            // Convert Position into Pixel Offset
-            val positionDelta = positionOffset - previousPositionOffset
-            val deltaPixels = positionDelta / meterPerPixel * scaleFactor
-            previousPositionOffset = positionOffset
-            markerOffset += deltaPixels
-            // (0, 0) -> RedBird; Unit: Screen Pixel
-            drawUserMarker(this, markerOffset.x, markerOffset.y, yaw)
-            // waypoints
-            drawWaypoints(this, meterPerPixel,scaleFactor, screenWidthPx, screenHeightPx, markerOffset, positionOffset, waypoints)
-        }
-
-        if(showTipWindow){
-            Canvas(modifier = Modifier
-                .offset { IntOffset(tipPosition.x.toInt(), tipPosition.y.toInt()) }){
-                this.drawCircle(
-                    color = Color(0xFFC7D3DD), // Glow color: #77B6EA
-                    radius = 25f,
+    var clicked by remember { mutableStateOf(false) }
+    var savingDir by remember { mutableStateOf("0") }
+//    val scope = CoroutineScope(Dispatchers.IO)
+//    val timer = TimerUtils(scope)
+    var waiting4label by remember { mutableStateOf(true) }
+    Column (modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center){
+        Box(modifier = Modifier
+            .fillMaxHeight(0.8f)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onLongPress = { offset ->
+                        showTipWindow = true
+                        tipPosition = offset // Capture the position
+                    }
                 )
             }
-            FilledCardExample(tipPosition,
-                onConfirm = {
-                    val pointToMarker = tipPosition - markerOffset - Offset(canvasSize.x / 2, canvasSize.y / 2)
-                    val realOffset = pointToMarker / scaleFactor * meterPerPixel
-                    waypoints.add(realOffset + positionOffset)
+            .pointerInput(Unit) {
+                // Detect transform gestures
+                detectTransformGestures { _, pan, zoom, _ ->
                     showTipWindow = false
-                    Log.d("Map", "New waypoint ${realOffset.x}, ${realOffset.y}")
-                },
-                onDismiss = { showTipWindow = false }
-            )
-        }
-    }
-
-    // A dummy position updater
-    LaunchedEffect(Unit) {
-        val fps = 60
-        val periodTime = 3000
-        while (true) {
-            val totalFrames = periodTime / 1000 * fps
-            Log.i("offset", targetOffset.toString())
-            val step = (targetOffset[0] - positionOffset) / totalFrames.toFloat()
-            for (i in 0..totalFrames) {
-                positionOffset += step
-                delay((1000 / fps).toLong())
+                    val previousScaleFactor = scaleFactor
+                    scaleFactor = kotlin.math.min(5.0f, scaleFactor * zoom)
+                    scaleFactor = kotlin.math.max(5.0f, scaleFactor * zoom)
+                    accumulatedScaleFactor *= (scaleFactor / previousScaleFactor)
+                    // Handle Pan
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - startTime > shakingTime) {
+                        // Handle More Logics Here
+                        mapDragOffset = IntOffset(
+                            (mapDragOffset.x + accumulatedOffset.x).roundToInt(),
+                            (mapDragOffset.y + accumulatedOffset.y).roundToInt()
+                        )
+                        markerOffset =
+                            (markerOffset - moveRedBirdToCenterOffset.toOffset() - mapDragOffset.toOffset()) * accumulatedScaleFactor + moveRedBirdToCenterOffset.toOffset() + mapDragOffset.toOffset() + accumulatedOffset
+                        startTime = currentTime
+                        accumulatedOffset = Offset.Zero
+                        accumulatedScaleFactor = 1f
+                    }
+                    accumulatedOffset =
+                        Offset(accumulatedOffset.x + pan.x, accumulatedOffset.y + pan.y)
+                }
             }
+        ) {
+            // Background image of the map
+            Image(
+                painter = painterResource(id = R.drawable.academic_building_g),
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .offset { moveRedBirdToCenterOffset + mapDragOffset }
+                    .scale(scaleFactor)
+            )
+
+            // Notice that here we use the red bird as the zero point
+            Canvas(modifier = Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { coordinates ->
+                    val size = coordinates.size // Get the size of the canvas
+                    canvasSize = Offset(size.width.toFloat(), size.height.toFloat())
+                }
+            ) {
+                // Convert Position into Pixel Offset
+                val positionDelta = positionOffset - previousPositionOffset
+                val deltaPixels = positionDelta / meterPerPixel * scaleFactor
+                previousPositionOffset = positionOffset
+                markerOffset += deltaPixels
+                // (0, 0) -> RedBird; Unit: Screen Pixel
+//                drawUserMarker(this, markerOffset.x, markerOffset.y, yaw)
+                // waypoints
+                drawWaypoints(
+                    this,
+                    meterPerPixel,
+                    scaleFactor,
+                    screenWidthPx,
+                    screenHeightPx,
+                    markerOffset,
+                    positionOffset,
+                    waypoints
+                )
+            }
+
+            if (showTipWindow) {
+                Canvas(modifier = Modifier
+                    .offset { IntOffset(tipPosition.x.toInt(), tipPosition.y.toInt()) }) {
+                    this.drawCircle(
+                        color = Color(0xFFFF0000), // Glow color: #77B6EA
+                        radius = 25f,
+                    )
+                }
+                FilledCardExample(tipPosition,
+                    onConfirm = {
+                        val pointToMarker =
+                            tipPosition - markerOffset - Offset(canvasSize.x / 2, canvasSize.y / 2)
+                        val realOffset = pointToMarker / scaleFactor * meterPerPixel
+                        waypoints.add(realOffset + positionOffset)
+                        showTipWindow = false
+                        waiting4label = false
+                        Log.d("Map", "New waypoint ${realOffset.x}, ${realOffset.y}")
+                    },
+                    onDismiss = { showTipWindow = false }
+                )
+            }
+        }
+        Text(text = when {
+                !clicked -> "Ready to go"
+                waiting4label -> "Label No.${waypoints.size} waypoint!"
+                else -> "Grab IMU data..."
+            }, color = when {
+                !clicked -> Color.Green
+                waiting4label -> Color.Red
+                else -> Color(0xFFFFA500)
+            }
+        )
+        TextField(
+            value = savingDir,
+            onValueChange = { newText ->
+                savingDir = newText
+            },
+            label = { Text("# of trajectory") },
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Decimal,
+                imeAction = ImeAction.Done
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 32.dp)
+        )
+        // Start Tracking
+        Button(onClick = {
+            if (!clicked) {
+                val currentTimeMillis = System.currentTimeMillis()
+                val currentTime = SimpleDateFormat("yyyy-MM-dd HH-mm-ss", Locale.getDefault()).format(currentTimeMillis)
+                timer.runSensorTaskAtFrequency(
+                    sensorManager,
+                    0.05,
+                    currentTime,
+                    "Trajectory${savingDir}",
+                    "trajectory"
+                ) {
+                    Log.d("Sensor Finished", "Sampling finished, successful samples: $it")
+                }
+
+                timer.runWifiTaskAtFrequency(
+                    wifiManager,
+                    5f.toDouble(),
+                    currentTime,
+                    "Trajectory${savingDir}",
+                    true,
+                    getWaitingFlag = {
+                        waiting4label
+                    },
+                    setWaitingFlag = {
+                        waiting4label = true
+                    },
+                    getWaypoint = {
+                        waypoints.last()
+                    }
+                ) {
+                    Log.d("Wi-Fi Finished", "Sampling finished, successful samples: $it")
+                }
+
+                sensorManager.startMonitoring(context)
+                clicked = true
+            } else {
+                sensorManager.stopMonitoring()
+                waypoints.clear()
+                savingDir = (savingDir.toInt() + 1).toString()
+                timer.stopTask()
+//                scope.cancel()
+                clicked = false
+            }
+        }, colors = if (clicked) {
+            ButtonDefaults.buttonColors(containerColor = Color.Red )
+        } else {
+            ButtonDefaults.buttonColors()
+        }) {
+            Text(text = if (clicked) "Stop Sampling" else "Start Sampling")
         }
     }
 }
+
 
 fun drawUserMarker(drawScope: DrawScope,
                    x: Float, y: Float,
@@ -744,7 +1142,7 @@ fun drawWaypoints(drawScope: DrawScope, meterPerPixel: Float, scaleFactor: Float
         Log.d("Map", "Pixel Delta: ${pixelDelta.x}, ${pixelDelta.y}")
         var drawPosition = pixelDelta + markerOffset + drawScope.center
         drawScope.drawCircle(
-            color = Color(0xFFC7D3DD),
+            color = Color(0xFFFF0000),
             radius = 20f, // Radius of glow
             center = drawPosition
         )
@@ -754,7 +1152,7 @@ fun drawWaypoints(drawScope: DrawScope, meterPerPixel: Float, scaleFactor: Float
                 drawPosition.x + 6 * scaleFactor,
                 drawPosition.y + 6 * scaleFactor,
                 Paint().apply {
-                    color = android.graphics.Color.parseColor("#C7D3DD") // Set the desired text color
+                    color = android.graphics.Color.parseColor("#FF0000") // Set the desired text color
                     textSize = 50f // Set the desired text size
                 }
             )
@@ -770,7 +1168,7 @@ fun FilledCardExample(offset: Offset, onConfirm: () -> Unit, onDismiss: () -> Un
             .offset { IntOffset(offset.x.roundToInt(), offset.y.roundToInt()) }
             .padding(5.dp)
     ) {
-        Text(text = "Add waypoint?")
+        Text(text = "${offset.x}, ${offset.y}")
         Row {
             Button(onClick = onConfirm, Modifier.padding(5.dp)) {
                 Text("Yes")
@@ -786,13 +1184,16 @@ class SensorUtils(context: Context): SensorEventListener {
     private var sensorManager: SensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private var rotationVectorSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
     private var stepCountSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
+    private var accSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
     private var lastRotationVector: FloatArray? = null
     private var lastStepCount: Float? = null
+    private var lastAcc: FloatArray? = null
 
     interface SensorDataListener {
         fun onRotationVectorChanged(rotationVector: FloatArray)
         fun onStepCountChanged(stepCount: Float)
+        fun onAccChanged(acc: FloatArray)
     }
     private var sensorDataListener: SensorDataListener? = null
 
@@ -800,11 +1201,15 @@ class SensorUtils(context: Context): SensorEventListener {
         this.sensorDataListener = listener
         val rotationSuccess = sensorManager.registerListener(this, rotationVectorSensor, SensorManager.SENSOR_DELAY_FASTEST)
         val stepSuccess = sensorManager.registerListener(this, stepCountSensor, SensorManager.SENSOR_DELAY_FASTEST)
+        val accSuccess = sensorManager.registerListener(this, accSensor, SensorManager.SENSOR_DELAY_FASTEST)
         if (!rotationSuccess) {
             Log.e("SensorRegister", "Failed to register rotation vector sensor listener")
         }
         if (!stepSuccess) {
             Log.e("SensorRegister", "Failed to register step count sensor listener")
+        }
+        if (!accSuccess) {
+            Log.e("SensorRegister", "Failed to register accelerator sensor listener")
         }
     }
 
@@ -822,6 +1227,10 @@ class SensorUtils(context: Context): SensorEventListener {
                 lastStepCount = event.values[0]
                 sensorDataListener?.onStepCountChanged(event.values[0])
             }
+            Sensor.TYPE_ACCELEROMETER -> {
+                lastAcc = event.values
+                sensorDataListener?.onAccChanged(event.values)
+            }
         }
     }
 
@@ -831,40 +1240,91 @@ class SensorUtils(context: Context): SensorEventListener {
 
     fun getLastRotationVector(): FloatArray? = lastRotationVector
     fun getLastStepCount(): Float? = lastStepCount
-
+    fun getLastAcc(): FloatArray? = lastAcc
 }
 
 @Suppress("DEPRECATION")
-class TimerUtils(private val context: Context) {
-    private val handler = Handler()
-    private var elapsedTime = 0
-    private var isSensorTaskRunning = false
-    private var failedHappened = false
-    private var isWifiTaskRunning = false
+class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
+    private var isSensorTaskRunning = AtomicBoolean(false)
+    private var isWifiTaskRunning = AtomicBoolean(false)
+    private var blockListenUserLabel = AtomicBoolean(true)
+    private var sensorJob: Job? = null
+    private var wifiJob: Job? = null
+    private val context = context
 
+    private fun collectSensorData(
+        sensorManager: SensorUtils,
+        rotationFile: File,
+        eulerFile: File,
+        stepFile: File,
+    ) {
+        if (!isSensorTaskRunning.get()) return
 
-    fun runEverySecondForMinute(task: () -> Pair<String, Boolean>, onComplete: (Int) -> Unit) {
-        var successCounter = 0
-        elapsedTime = 0
-        val runnable: Runnable = object : Runnable {
-            override fun run() {
-                val (_, success) = task()
-                if (success) {
-                    successCounter += 1
-                } else {
-                    failedHappened = true
-                }
-                elapsedTime += 1
+        // Use the last known sensor data, or fallback to default if not available
+        val rotationVector = sensorManager.getLastRotationVector() ?: floatArrayOf(0f, 0f, 0f, 0f)
+        val stepCount = sensorManager.getLastStepCount() ?: 0f
 
-                if (success and failedHappened) {
-                    onComplete(successCounter)
-                } else {
-                    handler.postDelayed(this, 1000) // 每隔1秒重复运行
-                }
-            }
+        val currentTime = System.currentTimeMillis()
+        try {
+            val rotationWriter = FileWriter(rotationFile, true)
+            rotationWriter.append("$currentTime ${rotationVector.joinToString(" ")}\n")
+            rotationWriter.flush()
+            rotationWriter.close()
+        } catch (e: IOException) {
+            e.printStackTrace()
         }
 
-        handler.post(runnable)
+        try {
+            // Write rotation vector data
+            val eulerWriter = FileWriter(eulerFile, true)
+            // Calculate and write yaw data
+            val rotationMatrix = FloatArray(9)
+            SensorManager.getRotationMatrixFromVector(rotationMatrix, rotationVector)
+            val orientations = FloatArray(3)
+            SensorManager.getOrientation(rotationMatrix, orientations)
+            val yaw = Math.toDegrees(orientations[0].toDouble()).toFloat()
+            val roll = Math.toDegrees(orientations[1].toDouble()).toFloat()
+            val pitch = Math.toDegrees(orientations[2].toDouble()).toFloat()
+            eulerWriter.append("$currentTime $yaw $roll $pitch\n")
+            Log.d("Save", "$currentTime $yaw $roll $pitch")
+            eulerWriter.flush()
+            eulerWriter.close()
+        } catch (e: IOException) {
+            e.printStackTrace()
+        }
+
+        // Write the step count data
+        try {
+            val stepWriter = FileWriter(stepFile, true)
+            stepWriter.append("$currentTime $stepCount\n")
+            stepWriter.flush()
+            stepWriter.close()
+        } catch (e: IOException) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun collectWiFiData(
+        wifiManager: WifiManager,
+        wifiFile: File,
+        collectWaypoint: Boolean,
+        waypointPosition: Offset? = null
+    ) {
+        if (!isWifiTaskRunning.get()) return
+        val (wifiResults, success) = wifiScan(wifiManager)
+        if (success) {
+            try {
+                val wifiWriter = FileWriter(wifiFile, true)
+                if (collectWaypoint) {
+                    wifiWriter.append("${waypointPosition?.x}, ${waypointPosition?.y}\n")
+                }
+                wifiWriter.append("$wifiResults\n")
+                wifiWriter.flush()
+                wifiWriter.close()
+            } catch (e: IOException) {
+                e.printStackTrace()
+            }
+        }
     }
 
     fun runSensorTaskAtFrequency(
@@ -872,13 +1332,15 @@ class TimerUtils(private val context: Context) {
         frequency: Double,
         timestamp: String,
         dirName: String,
+        selectedRunnable: String,
         onComplete: (Int) -> Unit
     ) {
-        val mainDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
+//        val mainDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
+        val mainDir = File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
+        Log.d("DIR", mainDir.toString())
         if (!mainDir.exists()) {
             mainDir.mkdirs()
         }
-        var successCounter = 0
         var dir = File(mainDir, timestamp)
         if (dirName != "") {
             dir = File(mainDir, dirName)
@@ -888,65 +1350,32 @@ class TimerUtils(private val context: Context) {
         }
         val stepFile = File(dir, "step.txt")
         val rotationFile = File(dir, "rotation.txt")
-        val yawFile = File(dir, "yaw.txt")
+        val eulerFile = File(dir, "euler.txt")
 
+        isSensorTaskRunning.set(true)
+        sensorJob = coroutineScope.launch {
+            while (isSensorTaskRunning.get() && isActive) {
+                collectSensorData(sensorManager, rotationFile, eulerFile, stepFile)
 
-        val runnable: Runnable = object : Runnable {
-            override fun run() {
-                if (!isSensorTaskRunning) return
+                when (selectedRunnable) {
+                    "point" -> {
+                        delay((frequency * 1000).toLong())
+                    }
 
-                // Use the last known sensor data, or fallback to default if not available
-                val rotationVector = sensorManager.getLastRotationVector() ?: floatArrayOf(0f, 0f, 0f, 0f)
-                val stepCount = sensorManager.getLastStepCount() ?: 0f
-
-                val currentTime = System.currentTimeMillis()
-                try {
-                    val rotationWriter = FileWriter(rotationFile, true)
-                    rotationWriter.append("$currentTime ${rotationVector.joinToString(" ")}\n")
-                    rotationWriter.flush()
-                    rotationWriter.close()
-                } catch (e: IOException) {
-                    e.printStackTrace()
-                }
-
-                try {
-                    // Write rotation vector data
-                    val yawWriter = FileWriter(yawFile, true)
-                    // Calculate and write yaw data
-                    val rotationMatrix = FloatArray(9)
-                    SensorManager.getRotationMatrixFromVector(rotationMatrix, rotationVector)
-                    val orientations = FloatArray(3)
-                    SensorManager.getOrientation(rotationMatrix, orientations)
-                    val yaw = Math.toDegrees(orientations[0].toDouble()).toFloat()
-                    yawWriter.append("$currentTime $yaw\n")
-                    yawWriter.flush()
-                    yawWriter.close()
-                } catch (e: IOException) {
-                    e.printStackTrace()
-                }
-
-                // Write the step count data
-                try {
-                    val stepWriter = FileWriter(stepFile, true)
-                    stepWriter.append("$currentTime $stepCount\n")
-                    stepWriter.flush()
-                    stepWriter.close()
-                } catch (e: IOException) {
-                    e.printStackTrace()
-                }
-
-                successCounter++
-
-                if (isSensorTaskRunning) {
-                    handler.postDelayed(this, (frequency * 1000).toLong())
-                } else {
-                    onComplete(successCounter)
+                    "trajectory" -> {
+                        try {
+                            while (blockListenUserLabel.get() && isActive) {
+                                Log.d("IMU", "IMU waiting, $isActive")
+                                delay(1000)
+                            }
+                            delay((frequency * 1000).toLong())
+                        } catch (e: CancellationException) {
+                            break
+                        }
+                    }
                 }
             }
         }
-
-        isSensorTaskRunning = true
-        handler.post(runnable)
     }
 
     fun runWifiTaskAtFrequency(
@@ -954,15 +1383,17 @@ class TimerUtils(private val context: Context) {
         frequencyY: Double, // Wi-Fi 采集频率 (秒)
         timestamp: String,
         dirName: String,
-        collectWaypoint: Boolean = false,
-        waypointPosition: Offset = Offset(0f, 0f),
+        collectWaypoint: Boolean,
+        getWaitingFlag: () -> Boolean = {true},
+        setWaitingFlag: () -> Unit = {},
+        getWaypoint: () -> Offset = {Offset.Zero},
         onComplete: (Int) -> Unit,
     ) {
-        val mainDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
+//        val mainDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
+        val mainDir = File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
         if (!mainDir.exists()) {
             mainDir.mkdirs()
         }
-        var successCounter = 0
         var dir = File(mainDir, timestamp)
         if (dirName != "") {
             dir = File(mainDir, dirName)
@@ -971,44 +1402,40 @@ class TimerUtils(private val context: Context) {
             dir.mkdirs()
         }
         val wifiFile = File(dir, "wifi.txt")
+        isWifiTaskRunning.set(true)
 
-        val wifiRunnable: Runnable = object : Runnable {
-            override fun run() {
-                if (!isWifiTaskRunning) return
-
-                // 执行 Wi-Fi 扫描并写入结果
-                val (wifiResults, success) = wifiScan(wifiManager)
-                if (success) {
-                    successCounter++
-                    try {
-                        val wifiWriter = FileWriter(wifiFile, true)
-                        if(collectWaypoint) {
-                            wifiWriter.append("${waypointPosition.x}, ${waypointPosition.y}\n")
-                        }
-                        wifiWriter.append("$wifiResults\n")
-                        wifiWriter.flush()
-                        wifiWriter.close()
-                    } catch (e: IOException) {
-                        e.printStackTrace()
+        wifiJob = coroutineScope.launch {
+            while (isWifiTaskRunning.get() && isActive) {
+                try {
+                    setWaitingFlag()
+                    while (getWaitingFlag() && isActive) {
+                        Log.d("WIFI", "Wifi waiting, $isActive")
+                        delay(1000)
                     }
-                }
-
-                if (isWifiTaskRunning) {
-                    handler.postDelayed(this, (frequencyY * 1000).toLong())  // 按照频率Y采集
-                } else {
-                    onComplete(successCounter)
+                    blockListenUserLabel.set(true)
+                    val waypointPosition = getWaypoint()
+                    blockListenUserLabel.set(false)
+                    collectWiFiData(
+                        wifiManager,
+                        wifiFile,
+                        collectWaypoint,
+                        waypointPosition
+                    )
+                    delay((frequencyY * 1000).toLong())
+                }catch (e: CancellationException){
+                    break
                 }
             }
         }
-
-        isWifiTaskRunning = true
-        handler.post(wifiRunnable)
     }
 
     // 提供停止任务的方法
     fun stopTask() {
-        isSensorTaskRunning = false  // 将标志设为false，停止任务
-        isWifiTaskRunning = false
+        sensorJob?.cancel(cause = CancellationException("Sensor task finished"))
+        wifiJob?.cancel(cause = CancellationException("wifi task finished"))
+        isSensorTaskRunning.set(false)  // 将标志设为false，停止任务
+        isWifiTaskRunning.set(false)
+        blockListenUserLabel.set(true)
     }
 }
 
@@ -1018,8 +1445,10 @@ fun wifiScan(wifiManager: WifiManager): Pair<String, Boolean> {
     val success = wifiManager.startScan()
     if (success) {
         val scanResults = wifiManager.scanResults
+        // TODO: currentTimeMillis change
+        val currentTime = System.currentTimeMillis()
         val resultList = scanResults.map { scanResult ->
-            "${System.currentTimeMillis()} ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level}"
+            "$currentTime ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level}"
         }
 
         val resultString = resultList.joinToString("\n")  // 将每个结果拼接为字符串，使用换行分隔
