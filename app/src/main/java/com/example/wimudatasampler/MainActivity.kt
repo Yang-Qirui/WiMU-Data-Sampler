@@ -110,9 +110,9 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
-import org.ejml.simple.SimpleMatrix
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.*
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 
 class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
@@ -120,8 +120,6 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private lateinit var wifiManager: WifiManager
     private lateinit var wifiScanReceiver: BroadcastReceiver
     private lateinit var timer: TimerUtils
-    private var filter: KalmanFilter4WiFiIMU = KalmanFilter4WiFiIMU(0f, 0f, 0f, 0f)
-
     private var startSamplingTime: String = ""
     private var lastRotationVector: FloatArray? = null
     private var lastStepCount: Float? = null
@@ -134,9 +132,25 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var stepCount by mutableFloatStateOf(0f)  // 保存步数值
     private var waypoints = mutableStateListOf<Offset>()
     private var trackingWaypoints = mutableStateListOf<Offset>()
-    private var observeOffset = Offset.Zero
-    private var targetOffset = mutableStateListOf(Offset.Zero)
+    private var wifiOffset by mutableStateOf<Offset?>(null)
+    private var imuOffset by mutableStateOf<Offset?>(null)
+    private var stride by mutableFloatStateOf(0.4f)
+    private var targetOffset by mutableStateOf(Offset.Zero)
     private var beta by mutableFloatStateOf(1.0f)
+    private val initialState = doubleArrayOf(0.0, 0.0)
+    private val initialCovariance = arrayOf(
+        doubleArrayOf(5.0, 0.0),
+        doubleArrayOf(0.0, 1.0)
+    )
+    val Q = arrayOf(      // 过程噪声（预测误差）
+        doubleArrayOf(0.05, 0.0),
+        doubleArrayOf(0.0, 0.05)
+    )
+    val R = arrayOf(      // 观测噪声
+        doubleArrayOf(4.65.pow(2), 0.0),
+        doubleArrayOf(0.0, 1.75.pow(2))
+    )
+    private val filter = KalmanFilter(initialState, initialCovariance, Q, R)
 
     @RequiresApi(Build.VERSION_CODES.Q)
     private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()){
@@ -171,7 +185,12 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
     private val scope = CoroutineScope(Dispatchers.IO)
     private val imuScope = CoroutineScope(Dispatchers.IO)
+    private fun euclideanDistance(x1: Float, y1: Float, x2: Float, y2: Float): Float {
+        return sqrt((x2 - x1).pow(2) + (y2 - y1).pow(2))
+    }
     private fun startFetching() {
+        motionSensorManager.startMonitoring(this)
+        var warmupCounter = 0
         scope.launch {
             while (true) {
                 val (wifiResults, success) = wifiScan(wifiManager)
@@ -179,31 +198,47 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                     Log.d("Map", "Wifi Scan Results")
 //                    Log.d("BETA", beta.toString())
                     try {
-//                        val response = NetworkClient.fetchData(wifiResults)
-//                        val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
-////                        targetOffset[0] = Offset((beta * coordinate.x + (1 - beta) * targetOffset[0].component1()).toFloat(),
-////                            (beta * coordinate.y + (1 - beta) * targetOffset[0].component2()).toFloat()
-////                        )
-////                        observeOffset = Offset(coordinate.x, coordinate.y)
-////                        filter.initCoor(SimpleMatrix(arrayOf(floatArrayOf(observeOffset.x, observeOffset.y))))
-//                        Log.d("response", response.bodyAsText())
+                        val response = NetworkClient.fetchData(wifiResults)
+                        Log.d("response", response.bodyAsText())
+                        var coordinate: Coordinate?
+                        try {
+                            coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
+                        } catch (e:Exception) {
+                            delay(5000)
+                            continue
+                        }
+                        wifiOffset = Offset(coordinate.x, coordinate.y)
+
+                        Log.d("wifioffset", wifiOffset.toString())
+                        if ( warmupCounter > 2 ) {
+                            if (imuOffset == null) {
+                                imuOffset = Offset(coordinate.x, coordinate.y)
+                                filter.setInit(
+                                    doubleArrayOf(
+                                        coordinate.x.toDouble(),
+                                        coordinate.y.toDouble()
+                                    )
+                                )
+                                targetOffset = Offset(coordinate.x, coordinate.y)
+                            } else if (imuOffset != null) {
+                                filter.update(
+                                    doubleArrayOf(
+                                        coordinate.x.toDouble(),
+                                        coordinate.y.toDouble()
+                                    )
+                                )
+                                val (finalX, finalY) = filter.getState()
+                                targetOffset = Offset(finalX.toFloat(), finalY.toFloat())
+                                imuOffset = Offset(finalX.toFloat(), finalY.toFloat())
+                            }
+                        }
+                        warmupCounter += 1
                     }
                     catch (e: Exception) {
                         Log.e("Http exception", e.toString())
                     }
                 }
-                delay(3000)
-            }
-        }
-        imuScope.launch {
-            while (true) {
-                Log.d("Map", "IMU Scan Results")
-                try {
-
-                } catch (e: Exception) {
-                    Log.e("Http exception", e.toString())
-                }
-                delay(3000)
+                delay(5000)
             }
         }
     }
@@ -212,39 +247,9 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         scope.cancel()
         imuScope.cancel()
     }
-//
-//    private fun startKalmanFilter() {
-//        motionSensorManager.startMonitoring(this)
-//        var lastTargetOffset: Offset? = null
-//        val timeInterval = 0.5f
-//        scope.launch {
-//            while (true) {
-////                val lastStepCount = motionSensorManager.getLastStepCount()
-//                val lastAcc = motionSensorManager.getLastAcc()
-//                Log.d("StepCountAndAcc", lastAcc.toString())
-//                if (lastStepCount != null && lastAcc != null) {
-//                    val u =
-//                        SimpleMatrix(arrayOf(floatArrayOf(0.5f * lastAcc[0] * timeInterval.pow(2), 0.5f * lastAcc[1] * timeInterval.pow(2))))
-//                    var predictCoor: SimpleMatrix?
-//                    if (lastTargetOffset != null && observeOffset != lastTargetOffset) { // wifi fingerprint prediction updated
-//                        val obs = SimpleMatrix(arrayOf(floatArrayOf(targetOffset[0].x, targetOffset[0].y)))
-//                        predictCoor = filter.filter(u, obs)
-//                    } else {
-//                        predictCoor = filter.asyncUpdate(u)
-//                    }
-//                    if (predictCoor != null) {
-//                        targetOffset[0] = Offset(predictCoor[0].toFloat(), predictCoor[1].toFloat())
-//                    }
-//                    lastTargetOffset = targetOffset[0]
-//                }
-//                delay((timeInterval * 1000).toLong())
-//            }
-//        }
-//    }
 
     override fun onDestroy() {
         super.onDestroy()
-//        scope.cancel()
         unregisterReceiver(wifiScanReceiver)
     }
 
@@ -297,7 +302,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                             )
                         }
                         composable("inference") {
-                            InferenceScreen(targetOffset = targetOffset, yaw = yaw, waypoints = waypoints, startFetching = { startFetching() }, endFetching = {endFetching()})
+                            InferenceScreen(targetOffset = targetOffset, yaw = yaw, waypoints = waypoints, startFetching = { startFetching() }, endFetching = {endFetching()}, imuOffset = imuOffset, wifiOffset = wifiOffset)
                         }
                         composable("Track") {
                             TrackingScreen(context = this@MainActivity, waypoints = trackingWaypoints, sensorManager = motionSensorManager, wifiManager = wifiManager, timer = timer)
@@ -318,9 +323,6 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
         timer = TimerUtils(scope, this)
         motionSensorManager = SensorUtils(this)
-    // For runtime inference
-    //        startFetching()
-//        startKalmanFilter()
     }
 
     override fun onRotationVectorChanged(rotationVector: FloatArray) {
@@ -332,6 +334,17 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         yaw = Math.toDegrees(orientations[0].toDouble()).toFloat()
         pitch = Math.toDegrees(orientations[1].toDouble()).toFloat()
         roll = Math.toDegrees(orientations[2].toDouble()).toFloat()
+    }
+
+    override fun onSingleStepChanged() {
+        if (imuOffset != null) {
+            val x = imuOffset!!.x - stride * cos(Math.toRadians(yaw.toDouble()).toFloat()) // north is negative axis
+            val y = imuOffset!!.y - stride * sin(Math.toRadians(yaw.toDouble()).toFloat())
+            imuOffset = Offset(x, y)
+            filter.predict(0.49, Math.toRadians(yaw.toDouble()).toFloat())
+            val (imuX, imuY) = filter.getState()
+            targetOffset = Offset(imuX.toFloat(), imuY.toFloat())
+        }
     }
 
     override fun onStepCountChanged(stepCount: Float) {
@@ -355,53 +368,117 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     }
 }
 
-class KalmanFilter4WiFiIMU(
-    devAcc: Float,
-    devPredictX: Float,
-    devPredictY: Float,
-    timeInterval: Float
-    ) {
-    private var x: SimpleMatrix? = null
-    private var P: SimpleMatrix = SimpleMatrix(arrayOf(floatArrayOf(3f, 0f), floatArrayOf(0f, 3f)))
-    private val R: SimpleMatrix = SimpleMatrix(arrayOf(floatArrayOf(devPredictX, 0f), floatArrayOf(0f, devPredictY)))
-    private val tmpDev: Float = 0.125f * timeInterval.pow(4) * devAcc
-    private val Q: SimpleMatrix = SimpleMatrix(arrayOf(floatArrayOf(tmpDev, 0f), floatArrayOf(0f, tmpDev)))
-    private val I: SimpleMatrix = SimpleMatrix(arrayOf(floatArrayOf(1f, 0f), floatArrayOf(0f, 1f)))
+class KalmanFilter(
+    private var state: DoubleArray,       // 状态向量 [x, y]
+    private var covariance: Array<DoubleArray>, // 协方差矩阵 2x2
+    private val processNoise: Array<DoubleArray>, // 过程噪声 Q
+    private val measurementNoise: Array<DoubleArray> // 观测噪声 R
+) {
+    fun setInit(doubles: DoubleArray) {
+        state = doubles
+    }
+    /**
+     * 高频预测步骤（通过步长和航向角更新）
+     * @param stride 移动步长
+     * @param yaw 航向角（弧度）
+     */
+    fun predict(stride: Double, yaw: Float) {
+        // 计算运动增量
+        val deltaX = stride * cos(yaw)
+        val deltaY = stride * sin(yaw)
 
-    fun initCoor(newX: SimpleMatrix) {
-        if (this.x == null) {
-            this.x = newX
+        // 更新状态估计
+        state[0] -= deltaX
+        state[1] -= deltaY
+
+        // 更新协方差矩阵: P = P + Q
+        covariance = matrixAdd(covariance, processNoise)
+    }
+
+    /**
+     * 低频观测更新步骤
+     * @param measurement 观测值 [x, y]
+     */
+    fun update(measurement: DoubleArray) {
+        // 计算卡尔曼增益
+        val S = matrixAdd(covariance, measurementNoise)
+        val K = matrixMultiply(covariance, matrixInverse(S))
+
+        // 更新状态估计
+        val innovation = doubleArrayOf(
+            measurement[0] - state[0],
+            measurement[1] - state[1]
+        )
+        val correction = matrixVectorMultiply(K, innovation)
+        state[0] += correction[0]
+        state[1] += correction[1]
+
+        // 更新协方差矩阵: P = (I - K) * P
+        val identity = identityMatrix(2)
+        covariance = matrixMultiply(matrixSubtract(identity, K), covariance)
+    }
+
+    // 矩阵加法
+    private fun matrixAdd(a: Array<DoubleArray>, b: Array<DoubleArray>): Array<DoubleArray> {
+        return Array(2) { i ->
+            DoubleArray(2) { j ->
+                a[i][j] + b[i][j]
+            }
         }
     }
 
-    fun asyncUpdate(u: SimpleMatrix): SimpleMatrix? {
-        val lastX: SimpleMatrix? = this.x
-        if (lastX != null) {
-            val xMinus = lastX.plus(u)
-            val P_Minus = this.P + Q
-            this.P = P_Minus
-            this.x = xMinus
-        }
-        return this.x
-    }
-
-    fun filter(u: SimpleMatrix, obs: SimpleMatrix): SimpleMatrix? {
-        val lastX: SimpleMatrix? = this.x
-        val P: SimpleMatrix = this.P
-        if (lastX == null) {
-            return lastX
-        } else {
-            val xMinus = lastX.plus(u)
-            val P_minus = P + this.Q
-            val K = P_minus.mult((P_minus.plus(this.R)).invert())
-            val newX = xMinus.plus(K.mult(obs.minus(xMinus)))
-            val newP = (this.I.minus(K)).mult(P_minus)
-            this.x = newX
-            this.P = newP
-            return this.x
+    // 矩阵乘法
+    private fun matrixMultiply(a: Array<DoubleArray>, b: Array<DoubleArray>): Array<DoubleArray> {
+        return Array(2) { i ->
+            DoubleArray(2) { j ->
+                (0 until 2).sumOf { k -> a[i][k] * b[k][j] }
+            }
         }
     }
 
+    // 矩阵求逆（仅限 2x2）
+    private fun matrixInverse(matrix: Array<DoubleArray>): Array<DoubleArray> {
+        val det = matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0]
+        require(det != 0.0) { "Matrix is singular" }
+        return Array(2) { i ->
+            DoubleArray(2) { j ->
+                when {
+                    i == 0 && j == 0 -> matrix[1][1] / det
+                    i == 0 && j == 1 -> -matrix[0][1] / det
+                    i == 1 && j == 0 -> -matrix[1][0] / det
+                    else -> matrix[0][0] / det
+                }
+            }
+        }
+    }
+
+    // 矩阵向量乘法
+    private fun matrixVectorMultiply(matrix: Array<DoubleArray>, vector: DoubleArray): DoubleArray {
+        return DoubleArray(2) { i ->
+            (0 until 2).sumOf { j -> matrix[i][j] * vector[j] }
+        }
+    }
+
+    // 生成单位矩阵
+    private fun identityMatrix(size: Int): Array<DoubleArray> {
+        return Array(size) { i ->
+            DoubleArray(size) { j ->
+                if (i == j) 1.0 else 0.0
+            }
+        }
+    }
+
+    // 矩阵减法
+    private fun matrixSubtract(a: Array<DoubleArray>, b: Array<DoubleArray>): Array<DoubleArray> {
+        return Array(2) { i ->
+            DoubleArray(2) { j ->
+                a[i][j] - b[i][j]
+            }
+        }
+    }
+
+    // 获取当前状态
+    fun getState(): DoubleArray = state.copyOf()
 }
 
 @Serializable
@@ -683,11 +760,13 @@ fun SampleWidget(context: SensorUtils.SensorDataListener,
 
 @Composable
 fun InferenceScreen(
-    targetOffset: SnapshotStateList<Offset>,
+    targetOffset: Offset?,
     yaw: Float,
     waypoints: SnapshotStateList<Offset>,
     startFetching: () -> Unit,
-    endFetching: () -> Unit
+    endFetching: () -> Unit,
+    imuOffset: Offset?,
+    wifiOffset: Offset?
 ) {
     var scaleFactor by remember { mutableFloatStateOf(5f) }
 
@@ -819,6 +898,11 @@ fun InferenceScreen(
                 )
             }
         }
+        Text(text = when {
+                !clicked -> "Ready to go"
+                else -> "yaw ${yaw.roundToInt()}, ${imuOffset?.x?.roundToInt()}, ${imuOffset?.y?.roundToInt()}, ${wifiOffset?.x?.roundToInt()}, ${wifiOffset?.y?.roundToInt()}, ${targetOffset?.x?.roundToInt()}, ${targetOffset?.y?.roundToInt()}"
+            }
+        )
         Button(onClick = {
             if (!clicked) { startFetching()}
             else { endFetching() }
@@ -832,15 +916,16 @@ fun InferenceScreen(
         }
 
         // A dummy position updater
-        LaunchedEffect(Unit) {
+        LaunchedEffect(targetOffset) {
             val fps = 60
-            val periodTime = 3000
+            val periodTime = 1000
             while (true) {
                 val totalFrames = periodTime / 1000 * fps
-                Log.i("offset", targetOffset.toString())
-                val step = (targetOffset[0] - positionOffset) / totalFrames.toFloat()
+                val step = (targetOffset?.minus(positionOffset))?.div(totalFrames.toFloat())
                 for (i in 0..totalFrames) {
-                    positionOffset += step
+                    if (step != null) {
+                        positionOffset += step
+                    }
                     delay((1000 / fps).toLong())
                 }
             }
@@ -1045,7 +1130,8 @@ fun TrackingScreen(
                     },
                     getWaypoint = {
                         waypoints.last()
-                    }
+                    },
+                    needWait = true
                 ) {
                     Log.d("Wi-Fi Finished", "Sampling finished, successful samples: $it")
                 }
@@ -1182,9 +1268,11 @@ fun FilledCardExample(offset: Offset, onConfirm: () -> Unit, onDismiss: () -> Un
 
 class SensorUtils(context: Context): SensorEventListener {
     private var sensorManager: SensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+
     private var rotationVectorSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
     private var stepCountSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
     private var accSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+    private var singleStepSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
 
     private var lastRotationVector: FloatArray? = null
     private var lastStepCount: Float? = null
@@ -1194,6 +1282,7 @@ class SensorUtils(context: Context): SensorEventListener {
         fun onRotationVectorChanged(rotationVector: FloatArray)
         fun onStepCountChanged(stepCount: Float)
         fun onAccChanged(acc: FloatArray)
+        fun onSingleStepChanged()
     }
     private var sensorDataListener: SensorDataListener? = null
 
@@ -1202,6 +1291,8 @@ class SensorUtils(context: Context): SensorEventListener {
         val rotationSuccess = sensorManager.registerListener(this, rotationVectorSensor, SensorManager.SENSOR_DELAY_FASTEST)
         val stepSuccess = sensorManager.registerListener(this, stepCountSensor, SensorManager.SENSOR_DELAY_FASTEST)
         val accSuccess = sensorManager.registerListener(this, accSensor, SensorManager.SENSOR_DELAY_FASTEST)
+        val singleStepSuccess = sensorManager.registerListener(this, singleStepSensor, SensorManager.SENSOR_DELAY_FASTEST)
+
         if (!rotationSuccess) {
             Log.e("SensorRegister", "Failed to register rotation vector sensor listener")
         }
@@ -1210,6 +1301,9 @@ class SensorUtils(context: Context): SensorEventListener {
         }
         if (!accSuccess) {
             Log.e("SensorRegister", "Failed to register accelerator sensor listener")
+        }
+        if (!singleStepSuccess) {
+            Log.e("SensorRegister", "Failed to register step detector sensor listener")
         }
     }
 
@@ -1230,6 +1324,12 @@ class SensorUtils(context: Context): SensorEventListener {
             Sensor.TYPE_ACCELEROMETER -> {
                 lastAcc = event.values
                 sensorDataListener?.onAccChanged(event.values)
+            }
+            Sensor.TYPE_STEP_DETECTOR -> {
+                if (event.values[0] == 1.0f) {
+                    sensorDataListener?.onSingleStepChanged()
+                }
+//                Log.d("Step detector", event.values.toString())
             }
         }
     }
@@ -1278,7 +1378,8 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
             // Write rotation vector data
             val eulerWriter = FileWriter(eulerFile, true)
             // Calculate and write yaw data
-            val rotationMatrix = FloatArray(9)
+            val rotationMatrix = FloatArray(16)
+            Log.d("log", rotationVector.joinToString(" "))
             SensorManager.getRotationMatrixFromVector(rotationMatrix, rotationVector)
             val orientations = FloatArray(3)
             SensorManager.getOrientation(rotationMatrix, orientations)
@@ -1387,10 +1488,12 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         getWaitingFlag: () -> Boolean = {true},
         setWaitingFlag: () -> Unit = {},
         getWaypoint: () -> Offset = {Offset.Zero},
+        needWait: Boolean = false,
         onComplete: (Int) -> Unit,
     ) {
 //        val mainDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
         val mainDir = File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
+        Log.d("Maindir", mainDir.toString())
         if (!mainDir.exists()) {
             mainDir.mkdirs()
         }
@@ -1407,14 +1510,20 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         wifiJob = coroutineScope.launch {
             while (isWifiTaskRunning.get() && isActive) {
                 try {
-                    setWaitingFlag()
-                    while (getWaitingFlag() && isActive) {
-                        Log.d("WIFI", "Wifi waiting, $isActive")
-                        delay(1000)
+                    var waypointPosition: Offset? = null
+                    if (needWait) {
+                        setWaitingFlag()
+                        while (getWaitingFlag() && isActive) {
+                            Log.d("WIFI", "Wifi waiting, $isActive")
+                            delay(1000)
+                        }
+                        blockListenUserLabel.set(true)
+                        waypointPosition = getWaypoint()
+                        blockListenUserLabel.set(false)
                     }
-                    blockListenUserLabel.set(true)
-                    val waypointPosition = getWaypoint()
-                    blockListenUserLabel.set(false)
+                    else {
+                        waypointPosition = getWaypoint()
+                    }
                     collectWiFiData(
                         wifiManager,
                         wifiFile,
