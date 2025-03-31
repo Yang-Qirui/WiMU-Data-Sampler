@@ -193,7 +193,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         var isWarmupCompleted = false
         scope.launch {
             while (true) {
-                val (wifiResults, success) = wifiScan(wifiManager)
+                val (wifiResults, success, lastMinTimestamp) = wifiScan(wifiManager)
                 if (success) {
                     if (!isInitialLoad) {
                         loadingStarted = true
@@ -618,7 +618,7 @@ fun FilledCardExample(
 
 @SuppressLint("MissingPermission")
 @Suppress("DEPRECATION")
-fun wifiScan(wifiManager: WifiManager): Pair<String, Boolean> {
+fun wifiScan(wifiManager: WifiManager): Triple<String, Boolean, Long> {
     val success = wifiManager.startScan()
     if (success) {
         val scanResults = wifiManager.scanResults
@@ -637,14 +637,15 @@ fun wifiScan(wifiManager: WifiManager): Pair<String, Boolean> {
 
         val maxTimestamp = filteredResults.maxOf{ it.timestamp }
         val minTimestamp = filteredResults.minOf{ it.timestamp }
-        Log.d("DIFF", "${(maxTimestamp - minTimestamp)/1e6}")
+        Log.d("min ts", "$minTimestamp ")
+        Log.d("DIFF", "${(maxTimestamp - minTimestamp) / 1_000_000}")
         Log.d("Debug", "${currentTime - (bootTime + maxTimestamp / 1_000)}")
 
 //        Log.d("OUT", resultString)
-        return Pair(resultString, true)
+        return Triple(resultString, true, minTimestamp)
     } else {
         Log.e("ERR", "Scanning failed!")
-        return Pair("", false)
+        return Triple("", false, 0)
     }
 }
 

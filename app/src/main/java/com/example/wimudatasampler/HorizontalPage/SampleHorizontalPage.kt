@@ -1,7 +1,7 @@
 package com.example.wimudatasampler.HorizontalPage
 
+import android.annotation.SuppressLint
 import android.net.wifi.WifiManager
-import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -14,9 +14,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +36,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Locale
 
+@SuppressLint("DefaultLocale")
 @Composable
 fun SampleHorizontalPage(
     context: SensorUtils.SensorDataListener,
@@ -64,6 +63,9 @@ fun SampleHorizontalPage(
     var isSampling by remember {
         mutableStateOf(false)
     }
+    var isTestingSamplingRate by remember {
+        mutableStateOf(false)
+    }
     var dirName by remember {
         mutableStateOf("")
     }
@@ -77,7 +79,34 @@ fun SampleHorizontalPage(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            Text("Last Two Scan Interval: ${String.format("%.2f", timer.getLastTwoScanInterval() / 1_000_000.0)}")
+            Button(onClick = {
+                if (!isTestingSamplingRate) {
+                    // 开始任务逻辑
+                    scope.launch {
+                        timer.runTestFrequencyTask(
+                            wifiManager = wifiManager,
+                            frequency = 3.0f
+                        )
+                    }
+                    isTestingSamplingRate = true  // 切换为正在采样的状态
+                } else {
+                    // 停止任务逻辑
+                    timer.stopTask()
+                    isTestingSamplingRate = false  // 切换为停止采样状态
+                }
+            }, colors = if (isTestingSamplingRate) {
+                ButtonDefaults.buttonColors(containerColor = Color.Red)
+            } else {
+                ButtonDefaults.buttonColors()
+            }) {
+                if (isTestingSamplingRate) {
+                    Text("Start Testing Frequency")
+                } else {
+                    Text("End Testing Frequency")
+                }
 
+            }
             Spacer(modifier = Modifier.height(16.dp))
             // Select a waypoint to collect data
             Button(onClick = {
@@ -172,7 +201,6 @@ fun SampleHorizontalPage(
                                 sensorFrequency,
                                 currentTime,
                                 dirName,
-                                "point"
                             )
                         }
                         if (selectedValue != "") {

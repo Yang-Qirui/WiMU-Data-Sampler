@@ -22,10 +22,13 @@ import kotlin.coroutines.cancellation.CancellationException
 class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
     private var isSensorTaskRunning = AtomicBoolean(false)
     private var isWifiTaskRunning = AtomicBoolean(false)
-    private var blockListenUserLabel = AtomicBoolean(true)
+    private var isTestFreqTaskRunning = AtomicBoolean(false)
     private var sensorJob: Job? = null
     private var wifiJob: Job? = null
+    private var testFreqJob: Job? = null
     private val context = context
+    private var lastMinTimestamp: Long = 0
+    private var lastTwoScanInterval: Long = 0
 
     private fun collectSensorData(
         sensorManager: SensorUtils,
@@ -84,11 +87,15 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         wifiManager: WifiManager,
         wifiFile: File,
         collectWaypoint: Boolean,
-        waypointPosition: Offset? = null
+        waypointPosition: Offset? = null,
     ) {
         if (!isWifiTaskRunning.get()) return
-        val (wifiResults, success) = wifiScan(wifiManager)
+        val (wifiResults, success, latestMinTimestamp) = wifiScan(wifiManager)
         if (success) {
+            if (latestMinTimestamp != lastMinTimestamp) {
+                lastTwoScanInterval = latestMinTimestamp - lastMinTimestamp
+                lastMinTimestamp = latestMinTimestamp
+            }
             try {
                 val wifiWriter = FileWriter(wifiFile, true)
                 if (collectWaypoint) {
@@ -108,7 +115,6 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         frequency: Double,
         timestamp: String,
         dirName: String,
-        selectedRunnable: String,
     ) {
 //        val mainDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
         val mainDir = File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
@@ -131,24 +137,7 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         sensorJob = coroutineScope.launch {
             while (isSensorTaskRunning.get() && isActive) {
                 collectSensorData(sensorManager, rotationFile, eulerFile, stepFile)
-
-                when (selectedRunnable) {
-                    "point" -> {
-                        delay((frequency * 1000).toLong())
-                    }
-
-                    "trajectory" -> {
-                        try {
-                            while (blockListenUserLabel.get() && isActive) {
-                                Log.d("IMU", "IMU waiting, $isActive")
-                                delay(1000)
-                            }
-                            delay((frequency * 1000).toLong())
-                        } catch (e: CancellationException) {
-                            break
-                        }
-                    }
-                }
+                delay((frequency * 1000).toLong())
             }
         }
     }
@@ -182,7 +171,8 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
                         wifiManager,
                         wifiFile,
                         collectWaypoint,
-                        waypointPosition
+                        waypointPosition,
+
                     )
                     delay((frequencyY * 1000).toLong())
                 }catch (e: CancellationException){
@@ -192,12 +182,41 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         }
     }
 
+    fun runTestFrequencyTask(
+        wifiManager: WifiManager,
+        frequency: Float
+    ) {
+        isTestFreqTaskRunning.set(true)
+
+        testFreqJob = coroutineScope.launch {
+            while (isTestFreqTaskRunning.get() && isActive) {
+                try {
+                    if (!isTestFreqTaskRunning.get()) return@launch
+                    val (wifiResults, success, latestMinTimestamp) = wifiScan(wifiManager)
+                    if (success && latestMinTimestamp != lastMinTimestamp) {
+                        lastTwoScanInterval = latestMinTimestamp - lastMinTimestamp
+                        lastMinTimestamp = latestMinTimestamp
+                    }
+                    delay((frequency * 1000).toLong())
+                }catch (e: CancellationException){
+                    break
+                }
+            }
+        }
+    }
+
+
+    fun getLastTwoScanInterval(): Long {
+        return lastTwoScanInterval
+    }
+
     // 提供停止任务的方法
     fun stopTask() {
         sensorJob?.cancel(cause = CancellationException("Sensor task finished"))
         wifiJob?.cancel(cause = CancellationException("wifi task finished"))
+        testFreqJob?.cancel(cause = CancellationException("wifi task finished"))
         isSensorTaskRunning.set(false)  // 将标志设为false，停止任务
         isWifiTaskRunning.set(false)
-        blockListenUserLabel.set(true)
+        isTestFreqTaskRunning.set(false)
     }
 }
