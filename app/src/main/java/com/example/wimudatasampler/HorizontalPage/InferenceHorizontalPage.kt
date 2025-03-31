@@ -209,7 +209,7 @@ fun InferenceHorizontalPage(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .background(color = Color(0xFFF0EFEA))
+                .background(color = Color(0xfffafafa))
                 .onGloballyPositioned { coordinates ->
                     canvasSize = coordinates.size
                 }
