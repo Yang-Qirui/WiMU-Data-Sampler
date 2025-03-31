@@ -198,6 +198,7 @@ fun InferenceHorizontalPage(
         val secondaryContainerColor = MaterialTheme.colorScheme.secondaryContainer
         val onSecondaryContainerColor = MaterialTheme.colorScheme.onSecondaryContainer
 
+
         // Map background
         Canvas(
             modifier = Modifier
