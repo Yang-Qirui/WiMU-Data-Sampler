@@ -56,10 +56,13 @@ import com.example.wimudatasampler.FilledCardExample
 import com.example.wimudatasampler.R
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.sp
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -81,7 +84,6 @@ fun InferenceHorizontalPage(
     userPositionMeters: Offset?, // 用户实际位置（米为单位）
     userHeading: Float, // 用户朝向角度（角度制，0-360）
     waypoints: SnapshotStateList<Offset>,
-    userPosOffsetMeters: Offset,
     modifier: Modifier = Modifier,
     yaw: Float,
     imuOffset: Offset?,
@@ -113,6 +115,10 @@ fun InferenceHorizontalPage(
     val pixelsPerMeter = mapWidthPixels / mapWidthMeters
     val metersPerPixel = mapWidthMeters / mapWidthPixels
 
+    val userPosOffsetMeters = Offset(
+        mapWidthPixels * metersPerPixel / 2f,
+        mapHeightPixels * metersPerPixel / 2f
+    )
     // Transition state
     var scale by remember { mutableFloatStateOf(1f) }
     var gestureRotationDegrees by remember { mutableFloatStateOf(0f) }
@@ -282,7 +288,7 @@ fun InferenceHorizontalPage(
                     }
                 }
 
-                waypoints.forEach { waypoint ->
+                waypoints.forEachIndexed { index, waypoint ->
                     val screenPos = (userPosOffsetMeters + waypoint) * pixelsPerMeter
                     drawWaypointMarker(
                         position = screenPos,
@@ -290,6 +296,20 @@ fun InferenceHorizontalPage(
                         centerColor = onTertiaryContainerColor,
                         ringColor = tertiaryContainerColor,
                     )
+
+                    drawContext.canvas.nativeCanvas.apply {
+                        val paint = android.graphics.Paint().apply {
+                            color = onTertiaryContainerColor.toArgb() // Convert Compose Color to ARGB
+                            textSize = 140/scale.sp.toPx() // Convert sp to pixels
+                        }
+                        val num = index + 1
+                        drawText(
+                            "$num",
+                            screenPos.x + 20/scale,
+                            screenPos.y+ 20/scale,
+                            paint
+                        )
+                    }
                 }
             }
         }
@@ -330,6 +350,15 @@ fun InferenceHorizontalPage(
         }
 
         longPressPosition?.let { screenPos ->
+            Canvas(modifier = Modifier.size(24.dp)) {
+                drawWaypointMarker(
+                    position = screenPos,
+                    scale = 1.0f,
+                    centerColor = tertiaryContainerColor,
+                    ringColor = onTertiaryContainerColor,
+                )
+            }
+
             FilledCardExample(
                 offset = screenPos,
                 showingOffset = screenToMapCoordinates(screenPos),

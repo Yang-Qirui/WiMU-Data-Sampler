@@ -560,7 +560,6 @@ fun AppHorizontalPager(
                     userPositionMeters = targetOffset,
                     userHeading = yaw,
                     waypoints = waypoints,
-                    userPosOffsetMeters = Offset(x = 142f, y = 120f),
                     yaw = yaw,
                     imuOffset = imuOffset,
                     wifiOffset = wifiOffset,
