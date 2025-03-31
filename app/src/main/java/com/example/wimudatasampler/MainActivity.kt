@@ -91,6 +91,7 @@ import com.example.wimudatasampler.HorizontalPage.SampleHorizontalPage
 import com.example.wimudatasampler.network.NetworkClient
 import com.example.wimudatasampler.ui.theme.WiMUTheme
 import com.example.wimudatasampler.utils.KalmanFilter
+import com.example.wimudatasampler.utils.Quadruple
 import com.example.wimudatasampler.utils.SensorUtils
 import com.example.wimudatasampler.utils.TimerUtils
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
@@ -618,7 +619,7 @@ fun FilledCardExample(
 
 @SuppressLint("MissingPermission")
 @Suppress("DEPRECATION")
-fun wifiScan(wifiManager: WifiManager): Triple<String, Boolean, Long> {
+fun wifiScan(wifiManager: WifiManager): Quadruple<String, Boolean, Long, String> {
     val success = wifiManager.startScan()
     if (success) {
         val scanResults = wifiManager.scanResults
@@ -627,26 +628,21 @@ fun wifiScan(wifiManager: WifiManager): Triple<String, Boolean, Long> {
         val resultList = scanResults.map { scanResult ->
             "$currentTime ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level}"
         }
-
         val resultString = resultList.joinToString("\n")  // 将每个结果拼接为字符串，使用换行分隔
         val bootTime = System.currentTimeMillis() - SystemClock.elapsedRealtime()
-//        scanResults.map { scanResult ->
-//            Log.d("Debug", "${bootTime + scanResult.timestamp / 1_000} ${scanResult.BSSID} ${scanResult.frequency}")
-//        }
-        val filteredResults = scanResults.filter { it.frequency > 5000 }
-
-        val maxTimestamp = filteredResults.maxOf{ it.timestamp }
-        val minTimestamp = filteredResults.minOf{ it.timestamp }
+        val maxTimestamp = scanResults.maxOf { it.timestamp }
+        val minTimestamp = scanResults.minOf { it.timestamp }
         Log.d("min ts", "$minTimestamp ")
         Log.d("DIFF", "${(maxTimestamp - minTimestamp) / 1_000_000}")
         Log.d("Debug", "${currentTime - (bootTime + maxTimestamp / 1_000)}")
-
-//        Log.d("OUT", resultString)
-        return Triple(resultString, true, minTimestamp)
-    } else {
-        Log.e("ERR", "Scanning failed!")
-        return Triple("", false, 0)
+        if (currentTime - (bootTime + maxTimestamp / 1_000) < 500) {
+            return Quadruple(resultString, true, minTimestamp, "Success")
+        }
+        else {
+            return Quadruple("", false, 0, "Failed due to interval gap: ${currentTime - (bootTime + maxTimestamp / 1_000)}")
+        }
     }
+    return Quadruple("", false, 0, "Scanning failed")
 }
 
 fun drawWaypoints(

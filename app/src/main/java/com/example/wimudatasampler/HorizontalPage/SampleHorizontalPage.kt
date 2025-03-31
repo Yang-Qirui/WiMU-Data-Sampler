@@ -80,6 +80,7 @@ fun SampleHorizontalPage(
             verticalArrangement = Arrangement.Center
         ) {
             Text("Last Two Scan Interval: ${String.format("%.2f", timer.getLastTwoScanInterval() / 1_000_000.0)}")
+            Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = {
                 if (!isTestingSamplingRate) {
                     // 开始任务逻辑
@@ -180,6 +181,8 @@ fun SampleHorizontalPage(
                     .padding(horizontal = 32.dp)
             )
             Spacer(modifier = Modifier.height(16.dp))
+            Text("Wi-Fi scanning info: ${timer.getWifiScanningInfo()}")
+            Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = {
                     if (!isSampling) {
@@ -211,7 +214,7 @@ fun SampleHorizontalPage(
                                     wifiFrequency,
                                     currentTime,
                                     dirName,
-                                    false,
+                                    true,
                                     waypointPosition
                                 )
                             }
@@ -223,7 +226,7 @@ fun SampleHorizontalPage(
                                     wifiFrequency,
                                     currentTime,
                                     dirName,
-                                    true
+                                    false
                                 )
                             }
                         }

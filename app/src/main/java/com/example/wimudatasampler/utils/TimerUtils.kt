@@ -5,6 +5,7 @@ import android.hardware.SensorManager
 import android.net.wifi.WifiManager
 import android.os.Environment
 import android.util.Log
+import androidx.collection.scatterSetOf
 import androidx.compose.ui.geometry.Offset
 import com.example.wimudatasampler.wifiScan
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +30,7 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
     private val context = context
     private var lastMinTimestamp: Long = 0
     private var lastTwoScanInterval: Long = 0
+    private var wifiScanningInfo: String = "null"
 
     private fun collectSensorData(
         sensorManager: SensorUtils,
@@ -83,40 +85,12 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         }
     }
 
-    private fun collectWiFiData(
-        wifiManager: WifiManager,
-        wifiFile: File,
-        collectWaypoint: Boolean,
-        waypointPosition: Offset? = null,
-    ) {
-        if (!isWifiTaskRunning.get()) return
-        val (wifiResults, success, latestMinTimestamp) = wifiScan(wifiManager)
-        if (success) {
-            if (latestMinTimestamp != lastMinTimestamp) {
-                lastTwoScanInterval = latestMinTimestamp - lastMinTimestamp
-                lastMinTimestamp = latestMinTimestamp
-            }
-            try {
-                val wifiWriter = FileWriter(wifiFile, true)
-                if (collectWaypoint) {
-                    wifiWriter.append("${waypointPosition?.x}, ${waypointPosition?.y}\n")
-                }
-                wifiWriter.append("$wifiResults\n")
-                wifiWriter.flush()
-                wifiWriter.close()
-            } catch (e: IOException) {
-                e.printStackTrace()
-            }
-        }
-    }
-
     fun runSensorTaskAtFrequency(
         sensorManager: SensorUtils,
         frequency: Double,
         timestamp: String,
         dirName: String,
     ) {
-//        val mainDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
         val mainDir = File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
         Log.d("DIR", mainDir.toString())
         if (!mainDir.exists()) {
@@ -167,13 +141,26 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         wifiJob = coroutineScope.launch {
             while (isWifiTaskRunning.get() && isActive) {
                 try {
-                    collectWiFiData(
-                        wifiManager,
-                        wifiFile,
-                        collectWaypoint,
-                        waypointPosition,
-
-                    )
+                    if (!isWifiTaskRunning.get()) return@launch
+                    val (wifiResults, success, latestMinTimestamp, info) = wifiScan(wifiManager)
+                    wifiScanningInfo = info
+                    if (success) {
+                        if (latestMinTimestamp != lastMinTimestamp) {
+                            lastTwoScanInterval = latestMinTimestamp - lastMinTimestamp
+                            lastMinTimestamp = latestMinTimestamp
+                        }
+                        try {
+                            val wifiWriter = FileWriter(wifiFile, true)
+                            if (collectWaypoint) {
+                                wifiWriter.append("${waypointPosition?.x}, ${waypointPosition?.y}\n")
+                            }
+                            wifiWriter.append("$wifiResults\n")
+                            wifiWriter.flush()
+                            wifiWriter.close()
+                        } catch (e: IOException) {
+                            e.printStackTrace()
+                        }
+                    }
                     delay((frequencyY * 1000).toLong())
                 }catch (e: CancellationException){
                     break
@@ -192,7 +179,8 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
             while (isTestFreqTaskRunning.get() && isActive) {
                 try {
                     if (!isTestFreqTaskRunning.get()) return@launch
-                    val (wifiResults, success, latestMinTimestamp) = wifiScan(wifiManager)
+                    val (wifiResults, success, latestMinTimestamp, info) = wifiScan(wifiManager)
+                    wifiScanningInfo = info
                     if (success && latestMinTimestamp != lastMinTimestamp) {
                         lastTwoScanInterval = latestMinTimestamp - lastMinTimestamp
                         lastMinTimestamp = latestMinTimestamp
@@ -205,9 +193,12 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         }
     }
 
-
     fun getLastTwoScanInterval(): Long {
         return lastTwoScanInterval
+    }
+
+    fun getWifiScanningInfo(): String {
+        return wifiScanningInfo
     }
 
     // 提供停止任务的方法
