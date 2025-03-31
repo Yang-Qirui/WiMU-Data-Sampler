@@ -87,7 +87,7 @@ import androidx.compose.ui.zIndex
 import com.example.wimudatasampler.DataClass.Coordinate
 import com.example.wimudatasampler.HorizontalPage.InferenceHorizontalPage
 import com.example.wimudatasampler.HorizontalPage.SampleHorizontalPage
-import com.example.wimudatasampler.HorizontalPage.TrackingHorizontalPage
+//import com.example.wimudatasampler.HorizontalPage.TrackingHorizontalPage
 import com.example.wimudatasampler.network.NetworkClient
 import com.example.wimudatasampler.ui.theme.WiMUTheme
 import com.example.wimudatasampler.utils.KalmanFilter
@@ -360,7 +360,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                             val titles = listOf(
                                 "Sample",
                                 "Inference",
-                                "Track"
+//                                "Track"
                             )
 
                             var state by remember { mutableIntStateOf(0) }
@@ -570,16 +570,15 @@ fun AppHorizontalPager(
                     setLoadingStartFalse = setLoadingStartFalse
                 )
             }
-
-            2 -> {
-                TrackingHorizontalPage(
-                    context = context,
-                    waypoints = waypoints,
-                    sensorManager = motionSensorManager,
-                    wifiManager = wifiManager,
-                    timer = timer
-                )
-            }
+//            2 -> {
+//                TrackingHorizontalPage(
+//                    context = context,
+//                    waypoints = waypoints,
+//                    sensorManager = motionSensorManager,
+//                    wifiManager = wifiManager,
+//                    timer = timer
+//                )
+//            }
         }
 
     }
