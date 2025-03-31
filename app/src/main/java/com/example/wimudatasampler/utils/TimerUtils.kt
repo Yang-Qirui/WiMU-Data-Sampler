@@ -109,7 +109,6 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         timestamp: String,
         dirName: String,
         selectedRunnable: String,
-        onComplete: (Int) -> Unit
     ) {
 //        val mainDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
         val mainDir = File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
@@ -160,15 +159,9 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         timestamp: String,
         dirName: String,
         collectWaypoint: Boolean,
-        getWaitingFlag: () -> Boolean = {true},
-        setWaitingFlag: () -> Unit = {},
-        getWaypoint: () -> Offset = { Offset.Zero},
-        needWait: Boolean = false,
-        onComplete: (Int) -> Unit,
+        waypointPosition: Offset? = null,
     ) {
-//        val mainDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
         val mainDir = File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
-        Log.d("Maindir", mainDir.toString())
         if (!mainDir.exists()) {
             mainDir.mkdirs()
         }
@@ -185,20 +178,6 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         wifiJob = coroutineScope.launch {
             while (isWifiTaskRunning.get() && isActive) {
                 try {
-                    var waypointPosition: Offset? = null
-                    if (needWait) {
-                        setWaitingFlag()
-                        while (getWaitingFlag() && isActive) {
-                            Log.d("WIFI", "Wifi waiting, $isActive")
-                            delay(1000)
-                        }
-                        blockListenUserLabel.set(true)
-                        waypointPosition = getWaypoint()
-                        blockListenUserLabel.set(false)
-                    }
-                    else {
-                        waypointPosition = getWaypoint()
-                    }
                     collectWiFiData(
                         wifiManager,
                         wifiFile,

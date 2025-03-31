@@ -91,7 +91,7 @@ fun InferenceHorizontalPage(
     setNavigationStartFalse: () -> Unit,
     setLoadingStartFalse: () -> Unit
 ) {
-    val imageBitmap = ImageBitmap.imageResource(R.drawable.academic_building_g)
+    val imageBitmap = ImageBitmap.imageResource(R.drawable.academic_building_2f)
     // Map metadata
     val mapWidthMeters = 277f // Actual map width (m)
     val mapWidthPixels = imageBitmap.width.toFloat()

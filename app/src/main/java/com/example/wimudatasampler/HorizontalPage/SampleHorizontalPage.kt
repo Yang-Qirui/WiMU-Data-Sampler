@@ -56,7 +56,7 @@ fun SampleHorizontalPage(
 ) {
 
     var wifiFreq by remember {
-        mutableStateOf("15")
+        mutableStateOf("3")
     }
     var sensorFreq by remember {
         mutableStateOf("0.05")
@@ -77,15 +77,6 @@ fun SampleHorizontalPage(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(text = "Beta: ${getBeta()}")
-            Slider(
-                value = getBeta(),
-                onValueChange = { newValue ->
-                    changeBeta(newValue)
-                },
-                valueRange = 0f..1f, // 定义值的范围
-                steps = 19, // 如果想要均匀分布的10个步，设置步数为9
-            )
 
             Spacer(modifier = Modifier.height(16.dp))
             // Select a waypoint to collect data
@@ -182,12 +173,7 @@ fun SampleHorizontalPage(
                                 currentTime,
                                 dirName,
                                 "point"
-                            ) {
-                                Log.d(
-                                    "Sensor Finished",
-                                    "Sampling finished, successful samples: $it"
-                                )
-                            }
+                            )
                         }
                         if (selectedValue != "") {
                             val waypointPosition = waypoints[selectedValue.toInt() - 1]
@@ -197,28 +183,20 @@ fun SampleHorizontalPage(
                                     wifiFrequency,
                                     currentTime,
                                     dirName,
-                                    true,
-                                    getWaypoint = { waypointPosition }) {
-                                    Log.d(
-                                        "WiFi Finished",
-                                        "Wi-Fi sampling finished for waypoint $selectedValue, successful samples: $it"
-                                    )
-                                }
+                                    false,
+                                    waypointPosition
+                                )
                             }
-                        } else {
+                        }
+                        else {
                             scope.launch {
                                 timer.runWifiTaskAtFrequency(
                                     wifiManager,
                                     wifiFrequency,
                                     currentTime,
                                     dirName,
-                                    false
-                                ) {
-                                    Log.d(
-                                        "WiFi Finished",
-                                        "Wi-Fi sampling finished, successful samples: $it"
-                                    )
-                                }
+                                    true
+                                )
                             }
                         }
 
