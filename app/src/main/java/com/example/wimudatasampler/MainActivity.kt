@@ -41,21 +41,14 @@ import androidx.compose.runtime.mutableFloatStateOf
 import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.navigation.NavController
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Upcoming
-import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material3.Icon
-import androidx.navigation.compose.rememberNavController
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.rounded.AccessibilityNew
 import androidx.compose.material3.Card
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -66,6 +59,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.geometry.Offset
@@ -120,7 +114,6 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var showStepCountDialog by mutableStateOf(false)  // 控制弹窗显示状态
     private var stepCount by mutableFloatStateOf(0f)  // 保存步数值
     private var waypoints = mutableStateListOf<Offset>()
-    private var trackingWaypoints = mutableStateListOf<Offset>()
     private var wifiOffset by mutableStateOf<Offset?>(null)
     private var imuOffset by mutableStateOf<Offset?>(null)
     private var targetOffset by mutableStateOf(Offset.Zero)
@@ -184,9 +177,6 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
     private var job = Job()
     private var scope = CoroutineScope(Dispatchers.IO + job)
-    private fun euclideanDistance(x1: Float, y1: Float, x2: Float, y2: Float): Float {
-        return sqrt((x2 - x1).pow(2) + (y2 - y1).pow(2))
-    }
 
     private fun startFetching() {
         var warmupCounter = 0
@@ -361,9 +351,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                             val titles = listOf(
                                 "Sample",
                                 "Inference",
-//                                "Track"
                             )
-
                             var state by remember { mutableIntStateOf(0) }
                             val pagerState = rememberPagerState(pageCount = { titles.size })
 
@@ -540,14 +528,7 @@ fun AppHorizontalPager(
                     wifiManager = wifiManager,
                     timer = timer,
                     setStartSamplingTime = setStartSamplingTime,
-                    yaw = yaw,
-                    pitch = pitch,
-                    roll = roll,
-                    isMonitoringAngles = isMonitoringAngles,
-                    toggleMonitoringAngles = toggleMonitoringAngles,
-                    waypoints = waypoints,
-                    changeBeta = changeBeta,
-                    getBeta = getBeta
+                    waypoints = waypoints
                 )
             }
 

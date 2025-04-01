@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.net.wifi.WifiManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -14,6 +15,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,14 +46,7 @@ fun SampleHorizontalPage(
     wifiManager: WifiManager,
     timer: TimerUtils,
     setStartSamplingTime: (String) -> Unit,
-    yaw: Float,
-    pitch: Float,
-    roll: Float,
-    isMonitoringAngles: Boolean,
-    toggleMonitoringAngles: () -> Unit,
-    waypoints: SnapshotStateList<Offset>,
-    changeBeta: (Float) -> Unit,
-    getBeta: () -> Float
+    waypoints: SnapshotStateList<Offset>
 ) {
 
     var wifiFreq by remember {
@@ -68,6 +63,9 @@ fun SampleHorizontalPage(
     }
     var dirName by remember {
         mutableStateOf("")
+    }
+    var isCollectTraining by remember {
+        mutableStateOf(true)
     }
 
     var selectorExpanded by remember { mutableStateOf(false) }
@@ -114,7 +112,7 @@ fun SampleHorizontalPage(
                 selectorExpanded = true
             }) {
                 if (selectedValue == "") {
-                    Text("Collecting Unlabeled Data")
+                    Text("Collecting Labeled Data")
                 } else {
                     Text("Collect Waypoint $selectedValue")
                 }
@@ -180,13 +178,25 @@ fun SampleHorizontalPage(
                     .fillMaxWidth()
                     .padding(horizontal = 32.dp)
             )
-            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Switch(
+                    checked = isCollectTraining,
+                    onCheckedChange = { isCollectTraining = it },
+                    modifier = Modifier.padding(end = 16.dp)
+                )
+                Text(
+                    text = if (isCollectTraining) "Save as Training data" else "Save as Testing data",
+                    color = if (isCollectTraining) Color(0xff55d12c) else Color.Gray,
+                )
+            }
             Text("Wi-Fi scanning info: ${timer.getWifiScanningInfo()}")
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = {
                     if (!isSampling) {
-                        // 开始任务逻辑
                         val currentTimeMillis = System.currentTimeMillis()
                         val currentTime =
                             SimpleDateFormat("yyyy-MM-dd HH-mm-ss", Locale.getDefault()).format(
@@ -195,8 +205,18 @@ fun SampleHorizontalPage(
                         val wifiFrequency = wifiFreq.toDouble()
                         val sensorFrequency = sensorFreq.toDouble()
                         setStartSamplingTime(currentTime)
-                        if (selectedValue != "") {
-                            dirName = "Waypoint-${selectedValue}-$currentTime"
+                        val saveDir = if (isCollectTraining && selectedValue != "") {
+                            "Train"
+                        } else if (!isCollectTraining && selectedValue != "") {
+                            "Test"
+                        } else {
+                            "Unlabeled"
+                        }
+                        timer.setSavingDir(saveDir)
+                        dirName = if (selectedValue != "") {
+                            "Waypoint-${selectedValue}-$currentTime"
+                        } else {
+                            "Trajectory-$currentTime"
                         }
                         scope.launch {
                             timer.runSensorTaskAtFrequency(

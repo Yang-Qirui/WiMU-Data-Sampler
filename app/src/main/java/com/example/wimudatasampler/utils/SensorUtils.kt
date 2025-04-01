@@ -21,6 +21,7 @@ class SensorUtils(context: Context) : SensorEventListener {
     private var lastRotationVector: FloatArray? = null
     private var lastStepCount: Float? = null
     private var lastAcc: FloatArray? = null
+    private var lastStepTimestamp: Long? = null
 
     interface SensorDataListener {
         fun onRotationVectorChanged(rotationVector: FloatArray)
@@ -88,9 +89,9 @@ class SensorUtils(context: Context) : SensorEventListener {
 
             Sensor.TYPE_STEP_DETECTOR -> {
                 if (event.values[0] == 1.0f) {
+                    lastStepTimestamp = System.currentTimeMillis()
                     sensorDataListener?.onSingleStepChanged()
                 }
-//                Log.d("Step detector", event.values.toString())
             }
         }
     }
@@ -102,4 +103,5 @@ class SensorUtils(context: Context) : SensorEventListener {
     fun getLastRotationVector(): FloatArray? = lastRotationVector
     fun getLastStepCount(): Float? = lastStepCount
     fun getLastAcc(): FloatArray? = lastAcc
+    fun getLastSingleStepTime(): Long? = lastStepTimestamp
 }
