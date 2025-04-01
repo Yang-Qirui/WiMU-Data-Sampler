@@ -71,6 +71,8 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.navigation)
+    implementation(libs.volley)
+    implementation(libs.androidx.exifinterface)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -87,6 +89,8 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     kapt(libs.hilt.android.compiler)
     testImplementation(libs.androidx.room.testing)
+
+    implementation(libs.coil.compose)
 
     implementation(libs.hilt.android)
     implementation(libs.androidx.recyclerview)

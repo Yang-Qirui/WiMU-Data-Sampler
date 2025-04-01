@@ -1,5 +1,6 @@
 package com.example.wimudatasampler.Pages
 
+import android.content.Context
 import android.net.wifi.WifiManager
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -44,6 +46,7 @@ import androidx.compose.ui.zIndex
 import androidx.navigation.NavController
 import com.example.wimudatasampler.HorizontalPage.InferenceHorizontalPage
 import com.example.wimudatasampler.HorizontalPage.SampleHorizontalPage
+import com.example.wimudatasampler.MapViewModel
 import com.example.wimudatasampler.R
 import com.example.wimudatasampler.navigation.MainActivityDestinations
 import com.example.wimudatasampler.utils.SensorUtils
@@ -53,6 +56,8 @@ import com.example.wimudatasampler.utils.TimerUtils
 @Composable
 fun MainScreen(
     modifier: Modifier = Modifier,
+    mainContext: Context,
+    mapViewModel: MapViewModel,
     context: SensorUtils.SensorDataListener,
     navController: NavController,
     motionSensorManager: SensorUtils,
@@ -175,6 +180,8 @@ fun MainScreen(
             }
 
             AppHorizontalPager(
+                activityContext = mainContext,
+                mapViewModel = mapViewModel,
                 context = context,
                 state = state,
                 pagerState = pagerState,
@@ -210,7 +217,9 @@ fun MainScreen(
 @Composable
 fun AppHorizontalPager(
     modifier: Modifier = Modifier,
+    activityContext : Context,
     context: SensorUtils.SensorDataListener,
+    mapViewModel: MapViewModel,
     state: Int,
     pagerState: PagerState,
     updateState:()->Unit,
@@ -245,6 +254,8 @@ fun AppHorizontalPager(
         updateState()
     }
 
+    val selectedMap by mapViewModel.selectedMap.collectAsState()
+
     HorizontalPager(
         modifier = Modifier
             .fillMaxSize()
@@ -265,22 +276,25 @@ fun AppHorizontalPager(
             }
 
             1 -> {
-                InferenceHorizontalPage(
-                    navigationStarted = navigationStarted,
-                    loadingStarted = loadingStarted,
-                    startFetching = startFetching,
-                    endFetching = endFetching,
-                    userPositionMeters = targetOffset,
-                    userHeading = yaw,
-                    waypoints = waypoints,
-                    yaw = yaw,
-                    imuOffset = imuOffset,
-                    wifiOffset = wifiOffset,
-                    targetOffset = targetOffset,
-                    onRefreshButtonClicked = onRefreshButtonClicked,
-                    setNavigationStartFalse = setNavigationStartFalse,
-                    setLoadingStartFalse = setLoadingStartFalse
-                )
+                selectedMap?.let {
+                    InferenceHorizontalPage(
+                        context = activityContext,
+                        selectedMap = it,
+                        navigationStarted = navigationStarted,
+                        loadingStarted = loadingStarted,
+                        startFetching = startFetching,
+                        endFetching = endFetching,
+                        userPositionMeters = targetOffset,
+                        userHeading = yaw,
+                        waypoints = waypoints,
+                        yaw = yaw,
+                        imuOffset = imuOffset,
+                        wifiOffset = wifiOffset,
+                        targetOffset = targetOffset,
+                        onRefreshButtonClicked = onRefreshButtonClicked,
+                        setNavigationStartFalse = setNavigationStartFalse,
+                        setLoadingStartFalse = setLoadingStartFalse
+                    ) }
             }
 //            2 -> {
 //                TrackingHorizontalPage(

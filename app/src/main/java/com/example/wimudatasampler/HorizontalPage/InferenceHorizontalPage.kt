@@ -2,6 +2,8 @@ package com.example.wimudatasampler.HorizontalPage
 
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.graphics.BitmapFactory
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.VectorConverter
@@ -42,7 +44,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +51,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -66,7 +68,10 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
+import com.example.wimudatasampler.DataClass.MapModels
+import com.example.wimudatasampler.utils.ImageUtil.Companion.getImageFolderPath
 import kotlinx.coroutines.launch
+import java.io.File
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -80,6 +85,7 @@ enum class NavUiMode(val value: Int) {
 @SuppressLint("UnrememberedMutableState")
 @Composable
 fun InferenceHorizontalPage(
+    context: Context,
     navigationStarted: Boolean,
     loadingStarted: Boolean,
     startFetching: () -> Unit,
@@ -94,11 +100,15 @@ fun InferenceHorizontalPage(
     targetOffset: Offset?,
     onRefreshButtonClicked: () -> Unit,
     setNavigationStartFalse: () -> Unit,
-    setLoadingStartFalse: () -> Unit
+    setLoadingStartFalse: () -> Unit,
+    selectedMap: MapModels.ImageMap
 ) {
     val scope = rememberCoroutineScope()
 
-    val imageBitmap = ImageBitmap.imageResource(R.drawable.academic_building_2f)
+    val folderPath = getImageFolderPath(context)
+    val fullPath = File(folderPath, selectedMap.content).absolutePath
+    val imageBitmap = BitmapFactory.decodeFile(fullPath)?.asImageBitmap()?:ImageBitmap.imageResource(R.drawable.image_placeholder)
+
     // Map metadata
     val mapWidthMeters = 277f // Actual map width (m)
     val mapWidthPixels = imageBitmap.width.toFloat()

@@ -373,8 +373,10 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                     ) {
                         composable(MainActivityDestinations.Main.route) {
                             MainScreen(
+                                mainContext = this@MainActivity,
                                 context = this@MainActivity,
                                 navController = navController,
+                                mapViewModel = mapViewModel,
                                 motionSensorManager = motionSensorManager,
                                 wifiManager = wifiManager,
                                 timer = timer,
