@@ -81,7 +81,8 @@ fun MainScreen(
     wifiOffset: Offset?,
     onRefreshButtonClicked: () ->Unit,
     setNavigationStartFalse: () -> Unit,
-    setLoadingStartFalse: () -> Unit
+    setLoadingStartFalse: () -> Unit,
+    estimatedStride: Float
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -152,7 +153,6 @@ fun MainScreen(
             val titles = listOf(
                 "Sampling",
                 "Inference",
-//                                "Track"
             )
 
             var state by remember { mutableIntStateOf(1) }
@@ -207,7 +207,8 @@ fun MainScreen(
                 loadingStarted = loadingStarted,
                 onRefreshButtonClicked = onRefreshButtonClicked,
                 setNavigationStartFalse = setNavigationStartFalse,
-                setLoadingStartFalse = setLoadingStartFalse
+                setLoadingStartFalse = setLoadingStartFalse,
+                estimatedStride = estimatedStride
             )
         }
     }
@@ -244,7 +245,8 @@ fun AppHorizontalPager(
     wifiOffset: Offset?,
     onRefreshButtonClicked: () ->Unit,
     setNavigationStartFalse: () -> Unit,
-    setLoadingStartFalse: () -> Unit
+    setLoadingStartFalse: () -> Unit,
+    estimatedStride: Float
 ) {
     LaunchedEffect(state) {
         pagerState.scrollToPage(state)
@@ -272,6 +274,7 @@ fun AppHorizontalPager(
                     timer = timer,
                     setStartSamplingTime = setStartSamplingTime,
                     waypoints = waypoints,
+                    estimatedStride = estimatedStride
                 )
             }
 

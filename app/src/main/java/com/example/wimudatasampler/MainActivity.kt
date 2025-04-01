@@ -153,6 +153,9 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         doubleArrayOf(matrixR[0][0].pow(matrixRPowOne), matrixR[0][1]),
         doubleArrayOf(matrixR[1][0], matrixR[1][1].pow(matrixRPowTwo))
     )
+    private val userHeight = 1.7f
+    private val strideCoefficient = 0.414f
+    private var estimatedStrideLength by mutableFloatStateOf(0f)
     // The initial installation default value of the persistent variable
 
     private val filter = KalmanFilter(initialState, initialCovariance, matrixQ, fullMatrixR)
@@ -402,7 +405,8 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                     }
                                 },
                                 setNavigationStartFalse = { navigationStarted = false },
-                                setLoadingStartFalse = { loadingStarted = false }
+                                setLoadingStartFalse = { loadingStarted = false },
+                                estimatedStride = estimatedStrideLength
                             )
                         }
                         composable(MainActivityDestinations.Settings.route) {
@@ -503,8 +507,19 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     }
 
     override fun onAccChanged(acc: FloatArray) {
-        lastAcc = acc
-        this.lastAcc = acc
+        val acceleration = sqrt(
+            acc[0].pow(2) +
+                    acc[1].pow(2) +
+                    acc[2].pow(2)
+        ) - SensorManager.GRAVITY_EARTH
+
+        if (acceleration > 2.0f) { // 检测加速度峰值（步伐特征）
+            val currentTime = System.currentTimeMillis()
+            val lastStepTime = this.motionSensorManager.getLastSingleStepTime()
+            if (lastStepTime != null && currentTime - lastStepTime > 300) { // 过滤间隔小于300ms的误检
+                estimatedStrideLength = userHeight * strideCoefficient
+            }
+        }
     }
 
     private fun toggleAngleMonitoring() {
@@ -567,14 +582,15 @@ fun wifiScan(wifiManager: WifiManager): Quadruple<String, Boolean, Long, String>
         val bootTime = System.currentTimeMillis() - SystemClock.elapsedRealtime()
         val maxTimestamp = scanResults.maxOf { it.timestamp }
         val minTimestamp = scanResults.minOf { it.timestamp }
+        val gap = currentTime - (bootTime + maxTimestamp / 1_000)
         Log.d("min ts", "$minTimestamp ")
         Log.d("DIFF", "${(maxTimestamp - minTimestamp) / 1_000_000}")
-        Log.d("Debug", "${currentTime - (bootTime + maxTimestamp / 1_000)}")
-        if (currentTime - (bootTime + maxTimestamp / 1_000) < 500) {
-            return Quadruple(resultString, true, minTimestamp, "Success")
+        Log.d("Debug", "$gap")
+        if (gap < 500) {
+            return Quadruple(resultString, true, minTimestamp, "Success. $gap")
         }
         else {
-            return Quadruple("", false, 0, "Failed due to interval gap: ${currentTime - (bootTime + maxTimestamp / 1_000)}")
+            return Quadruple("", false, 0, "Failed due to interval gap: $gap")
         }
     }
     return Quadruple("", false, 0, "Scanning failed")

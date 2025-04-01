@@ -10,7 +10,6 @@ import android.util.Log
 class SensorUtils(context: Context) : SensorEventListener {
     private var sensorManager: SensorManager =
         context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-
     private var rotationVectorSensor: Sensor? =
         sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
     private var stepCountSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
@@ -51,6 +50,11 @@ class SensorUtils(context: Context) : SensorEventListener {
             singleStepSensor,
             SensorManager.SENSOR_DELAY_FASTEST
         )
+        val stepLengthSuccess = sensorManager.registerListener(
+            this,
+            accSensor,
+            SensorManager.SENSOR_DELAY_FASTEST
+        )
 
         if (!rotationSuccess) {
             Log.e("SensorRegister", "Failed to register rotation vector sensor listener")
@@ -63,6 +67,9 @@ class SensorUtils(context: Context) : SensorEventListener {
         }
         if (!singleStepSuccess) {
             Log.e("SensorRegister", "Failed to register step detector sensor listener")
+        }
+        if (!stepLengthSuccess) {
+            Log.e("SensorRegister", "Failed to register accelerometer sensor listener")
         }
     }
 
@@ -86,7 +93,6 @@ class SensorUtils(context: Context) : SensorEventListener {
                 lastAcc = event.values
                 sensorDataListener?.onAccChanged(event.values)
             }
-
             Sensor.TYPE_STEP_DETECTOR -> {
                 if (event.values[0] == 1.0f) {
                     lastStepTimestamp = System.currentTimeMillis()
