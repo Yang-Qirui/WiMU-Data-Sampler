@@ -5,6 +5,11 @@ import android.hardware.SensorManager
 import android.net.wifi.WifiManager
 import android.os.Environment
 import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import com.example.wimudatasampler.wifiScan
 import kotlinx.coroutines.CoroutineScope
@@ -27,9 +32,9 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
     private var wifiJob: Job? = null
     private var testFreqJob: Job? = null
     private val context = context
-    private var lastMinTimestamp: Long = 0
-    private var lastTwoScanInterval: Long = 0
-    private var wifiScanningInfo: String = "null"
+    private var lastMinTimestamp by mutableLongStateOf(0)
+    var lastTwoScanInterval by mutableLongStateOf(0)
+    var wifiScanningInfo by mutableStateOf("null")
     private var lastSingleStepTime: Long = 0
     private var savingMainDir: String = "unlabeled"
 
@@ -206,14 +211,6 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
                 }
             }
         }
-    }
-
-    fun getLastTwoScanInterval(): Long {
-        return lastTwoScanInterval
-    }
-
-    fun getWifiScanningInfo(): String {
-        return wifiScanningInfo
     }
 
     fun setSavingDir(dir: String) {

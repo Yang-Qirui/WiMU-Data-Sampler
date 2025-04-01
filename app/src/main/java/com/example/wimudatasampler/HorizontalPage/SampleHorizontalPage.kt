@@ -46,7 +46,8 @@ fun SampleHorizontalPage(
     wifiManager: WifiManager,
     timer: TimerUtils,
     setStartSamplingTime: (String) -> Unit,
-    waypoints: SnapshotStateList<Offset>
+    waypoints: SnapshotStateList<Offset>,
+    estimatedStride: Float
 ) {
 
     var wifiFreq by remember {
@@ -77,7 +78,8 @@ fun SampleHorizontalPage(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text("Last Two Scan Interval: ${String.format("%.2f", timer.getLastTwoScanInterval() / 1_000_000.0)}")
+            Text("Last Two Scan Interval: ${String.format("%.2f", timer.lastTwoScanInterval / 1_000_000.0)}")
+            Text("Estimated Stride: $estimatedStride")
             Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = {
                 if (!isTestingSamplingRate) {
@@ -192,7 +194,7 @@ fun SampleHorizontalPage(
                     color = if (isCollectTraining) Color(0xff55d12c) else Color.Gray,
                 )
             }
-            Text("Wi-Fi scanning info: ${timer.getWifiScanningInfo()}")
+            Text("Wi-Fi scanning info: ${timer.wifiScanningInfo}")
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = {

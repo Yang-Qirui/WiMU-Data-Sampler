@@ -10,7 +10,7 @@ class KalmanFilter(
     private val measurementNoise: Array<DoubleArray> // 观测噪声 R
 ) {
     fun setInit(doubles: DoubleArray) {
-        state = doubles
+        state = doubles.copyOf()
     }
     /**
      * 高频预测步骤（通过步长和航向角更新）
@@ -23,8 +23,8 @@ class KalmanFilter(
         val deltaY = stride * sin(yaw)
 
         // 更新状态估计
-        state[0] -= deltaX
-        state[1] -= deltaY
+        state[0] = state[0] - deltaX
+        state[1] = state[1] - deltaY
 
         // 更新协方差矩阵: P = P + Q
         covariance = matrixAdd(covariance, processNoise)
