@@ -6,7 +6,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.Paint
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
@@ -31,7 +30,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.unit.dp
 import android.hardware.SensorManager
@@ -39,23 +37,17 @@ import android.os.SystemClock
 import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.mutableFloatStateOf
 import android.view.WindowManager
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.navigation.NavController
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Upcoming
-import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material3.Icon
-import androidx.navigation.compose.rememberNavController
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.rounded.AccessibilityNew
 import androidx.compose.material3.Card
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -69,11 +61,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -84,9 +74,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.datastore.preferences.core.edit
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import com.example.wimudatasampler.DataClass.Coordinate
 import com.example.wimudatasampler.HorizontalPage.InferenceHorizontalPage
 import com.example.wimudatasampler.HorizontalPage.SampleHorizontalPage
+import com.example.wimudatasampler.Pages.MainScreen
+import com.example.wimudatasampler.Pages.MapChoosingScreen
+import com.example.wimudatasampler.Pages.SettingScreen
+import com.example.wimudatasampler.navigation.MainActivityDestinations
 //import com.example.wimudatasampler.HorizontalPage.TrackingHorizontalPage
 import com.example.wimudatasampler.network.NetworkClient
 import com.example.wimudatasampler.ui.theme.WiMUTheme
@@ -95,6 +93,7 @@ import com.example.wimudatasampler.utils.Quadruple
 import com.example.wimudatasampler.utils.SensorUtils
 import com.example.wimudatasampler.utils.TimerUtils
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 import kotlin.math.cos
 import kotlin.math.sin
@@ -104,7 +103,11 @@ import kotlinx.serialization.json.Json
 import kotlin.math.pow
 import kotlin.math.sqrt
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
+
+    private val mapViewModel: MapViewModel by viewModels()
+
     private lateinit var motionSensorManager: SensorUtils
     private lateinit var wifiManager: WifiManager
     private lateinit var wifiScanReceiver: BroadcastReceiver
@@ -128,26 +131,31 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var navigationStarted by mutableStateOf(false)
     private var loadingStarted by mutableStateOf(false)
 
-    //需要持久化的变量
+    // The initial installation default value of the persistent variable
     private var stride by mutableFloatStateOf(0.4f)
     private var beta by mutableFloatStateOf(1.0f)
-    private val initialState = doubleArrayOf(0.0, 0.0)
-    private val initialCovariance = arrayOf(
+    private var initialState = doubleArrayOf(0.0, 0.0)
+    private var initialCovariance = arrayOf(
         doubleArrayOf(5.0, 0.0),
         doubleArrayOf(0.0, 1.0)
     )
-    val matrixQ = arrayOf(      // 过程噪声（预测误差）
+    var matrixQ = arrayOf(      // Process noise (prediction error)
         doubleArrayOf(0.05, 0.0),
         doubleArrayOf(0.0, 0.05)
     )
-    val matrixR = arrayOf(      // 观测噪声
-        doubleArrayOf(4.65.pow(2), 0.0),
-        doubleArrayOf(0.0, 1.75.pow(2))
+    var matrixR = arrayOf(
+        doubleArrayOf(4.65, 0.0),
+        doubleArrayOf(0.0, 1.75)
     )
-    //需要持久化的变量
+    var matrixRPowOne = 2
+    var matrixRPowTwo = 2
+    var fullMatrixR = arrayOf(      // Observed noise
+        doubleArrayOf(matrixR[0][0].pow(matrixRPowOne), matrixR[0][1]),
+        doubleArrayOf(matrixR[1][0], matrixR[1][1].pow(matrixRPowTwo))
+    )
+    // The initial installation default value of the persistent variable
 
-
-    private val filter = KalmanFilter(initialState, initialCovariance, matrixQ, matrixR)
+    private val filter = KalmanFilter(initialState, initialCovariance, matrixQ, fullMatrixR)
 
     @RequiresApi(Build.VERSION_CODES.Q)
     private val requestPermissionLauncher =
@@ -253,11 +261,10 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     }
 
     private fun endFetching() {
-        job.cancel("Fetching stopped") // 取消当前任务
-        // 如果需要保持作用域可用，可以重新创建job：
-         job.cancel()
-         job = Job()
-         scope = CoroutineScope(Dispatchers.IO + job)
+        job.cancel("Fetching stopped")
+        job.cancel()
+        job = Job()
+        scope = CoroutineScope(Dispatchers.IO + job)
     }
 
     override fun onDestroy() {
@@ -270,7 +277,6 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     }
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestNextPermission()
@@ -293,106 +299,82 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                     window.navigationBarDividerColor = surfaceVariantColor.toArgb()
                 }
 
+                LaunchedEffect(Unit) {
+                    this@MainActivity.dataStore.data.collect { preferences ->
+                        stride = preferences[UserPreferencesKeys.STRIDE] ?: stride
+                        beta = preferences[UserPreferencesKeys.BETA] ?: beta
+                        initialState = doubleArrayOf(
+                            preferences[UserPreferencesKeys.INITIAL_STATE_1]
+                                ?: initialState[0],
+                            preferences[UserPreferencesKeys.INITIAL_STATE_2]
+                                ?: initialState[1]
+                        )
+                        initialCovariance = arrayOf(
+                            doubleArrayOf(
+                                preferences[UserPreferencesKeys.INITIAL_COVARIANCE_1]
+                                    ?: initialCovariance[0][0],
+                                preferences[UserPreferencesKeys.INITIAL_COVARIANCE_2]
+                                    ?: initialCovariance[0][1]
+                            ),
+                            doubleArrayOf(
+                                preferences[UserPreferencesKeys.INITIAL_COVARIANCE_3]
+                                    ?: initialCovariance[1][0],
+                                preferences[UserPreferencesKeys.INITIAL_COVARIANCE_4]
+                                    ?: initialCovariance[1][1]
+                            ),
+                        )
+                        matrixQ = arrayOf(
+                            doubleArrayOf(
+                                preferences[UserPreferencesKeys.MATRIX_Q_1]
+                                    ?: matrixQ[0][0],
+                                preferences[UserPreferencesKeys.MATRIX_Q_2]
+                                    ?: matrixQ[0][1]
+                            ),
+                            doubleArrayOf(
+                                preferences[UserPreferencesKeys.MATRIX_Q_3]
+                                    ?: matrixQ[1][0],
+                                preferences[UserPreferencesKeys.MATRIX_Q_4]
+                                    ?: matrixQ[1][1]
+                            ),
+                        )
+                        matrixR = arrayOf(
+                            doubleArrayOf(
+                                preferences[UserPreferencesKeys.MATRIX_R_1]
+                                    ?: matrixR[0][0],
+                                preferences[UserPreferencesKeys.MATRIX_R_2]
+                                    ?: matrixR[0][1]
+                            ),
+                            doubleArrayOf(
+                                preferences[UserPreferencesKeys.MATRIX_R_3]
+                                    ?: matrixR[1][0],
+                                preferences[UserPreferencesKeys.MATRIX_R_4]
+                                    ?: matrixR[1][1]
+                            ),
+                        )
+                        matrixRPowOne =
+                            preferences[UserPreferencesKeys.MATRIX_R_POW_1] ?: matrixRPowOne
+                        matrixRPowTwo =
+                            preferences[UserPreferencesKeys.MATRIX_R_POW_2] ?: matrixRPowTwo
+                        fullMatrixR = arrayOf(      // 观测噪声
+                            doubleArrayOf(matrixR[0][0].pow(matrixRPowOne), matrixR[0][1]),
+                            doubleArrayOf(matrixR[1][0], matrixR[1][1].pow(matrixRPowTwo))
+                        )
+                    }
+                }
+
                 Surface(
                     color = MaterialTheme.colorScheme.surface
                 ) {
-                    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+                    val navController = rememberNavController()
 
-                    Scaffold(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        topBar = {
-                            TopAppBar(
-                                colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.surface
-                                ),
-                                title = {
-                                    Box(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        val styleScriptFamily = FontFamily(
-                                            Font(R.font.style_script, FontWeight.Normal),
-                                        )
-
-                                        Text(
-                                            text = stringResource(id = R.string.app_name),
-                                            style = TextStyle(
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 24.sp
-                                            ),
-                                            fontFamily = styleScriptFamily
-                                        )
-                                    }
-                                },
-                                actions = {
-                                    IconButton(onClick = {
-                                        //TODO
-                                    }) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Settings,
-                                            contentDescription = "Settings"
-                                        )
-                                    }
-                                    IconButton(onClick = {
-                                        //TODO
-                                    }) {
-                                        Icon(
-                                            imageVector = Icons.Filled.MoreVert,
-                                            contentDescription = "More"
-                                        )
-                                    }
-                                },
-                                scrollBehavior = scrollBehavior
-                            )
-                        },
-                        floatingActionButton = {
-
-                            Column(
-                                horizontalAlignment = Alignment.End,
-                                modifier = Modifier.padding(bottom = 80.dp) // Add padding to lift the buttons above the main button
-                            ) {
-                            }
-                        }
-                    ) { innerPadding ->
-
-                        Column(modifier = Modifier
-                            .padding(innerPadding)
-                            .fillMaxSize()) {
-                            val titles = listOf(
-                                "Sample",
-                                "Inference",
-//                                "Track"
-                            )
-
-                            var state by remember { mutableIntStateOf(0) }
-                            val pagerState = rememberPagerState(pageCount = { titles.size })
-
-                            PrimaryTabRow(
-                                containerColor = MaterialTheme.colorScheme.surface,
-                                selectedTabIndex = state
-                            ) {
-                                titles.forEachIndexed { index, title ->
-                                    Tab(
-                                        selected = state == index,
-                                        onClick = {
-                                            state = index
-                                        },
-                                        text = {
-                                            Text(
-                                                text = title,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-                                    )
-                                }
-                            }
-
-                            AppHorizontalPager(
+                    NavHost(
+                        navController = navController,
+                        startDestination = MainActivityDestinations.Main.route
+                    ) {
+                        composable(MainActivityDestinations.Main.route) {
+                            MainScreen(
                                 context = this@MainActivity,
-                                state = state,
-                                pagerState = pagerState,
-                                updateState = {state = pagerState.currentPage},
+                                navController = navController,
                                 motionSensorManager = motionSensorManager,
                                 wifiManager = wifiManager,
                                 timer = timer,
@@ -412,7 +394,6 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 wifiOffset = wifiOffset,
                                 navigationStarted = navigationStarted,
                                 loadingStarted = loadingStarted,
-                                updateNavigationState = { navigationStarted = !navigationStarted },
                                 onRefreshButtonClicked = {
                                     if (wifiOffset != null) {
                                         targetOffset = wifiOffset!!
@@ -420,6 +401,54 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 },
                                 setNavigationStartFalse = { navigationStarted = false },
                                 setLoadingStartFalse = { loadingStarted = false }
+                            )
+                        }
+                        composable(MainActivityDestinations.Settings.route) {
+                            SettingScreen(
+                                context = this@MainActivity,
+                                navController = navController,
+                                stride = stride,
+                                beta = beta,
+                                initialState = initialState,
+                                initialCovariance = initialCovariance,
+                                matrixQ = matrixQ,
+                                matrixR = matrixR,
+                                matrixRPowOne = matrixRPowOne,
+                                matrixRPowTwo = matrixRPowTwo,
+                                updateStride = { newStride ->
+                                    stride = newStride
+                                },
+                                updateBeta = { newBeta ->
+                                    beta = newBeta
+                                },
+                                updateInitialState = { newInitialState ->
+                                    initialState = newInitialState
+                                },
+                                updateInitialCovariance = { newInitialCovariance ->
+                                    initialCovariance = newInitialCovariance
+                                },
+                                updateMatrixQ = { newMatrixQ ->
+                                    matrixQ = newMatrixQ
+                                },
+                                updateMatrixR = { newMatrixR ->
+                                    matrixR = newMatrixR
+                                },
+                                updateMatrixRPowOne = { newMatrixRPowOne ->
+                                    matrixRPowOne = newMatrixRPowOne
+                                },
+                                updateMatrixRPowTwo = { newMatrixRPowTwo ->
+                                    matrixRPowTwo = newMatrixRPowTwo
+                                },
+                                updateFullMatrixR = { newFullMatrixR  ->
+                                    fullMatrixR = newFullMatrixR
+                                },
+                            )
+                        }
+                        composable(MainActivityDestinations.MapChoosing.route) {
+                            MapChoosingScreen(
+                                context = this@MainActivity,
+                                navController = navController,
+                                mapViewModel = mapViewModel
                             )
                         }
                     }
@@ -486,103 +515,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     }
 }
 
-@Composable
-fun AppHorizontalPager(
-    modifier: Modifier = Modifier,
-    context: SensorUtils.SensorDataListener,
-    state: Int,
-    pagerState: PagerState,
-    updateNavigationState: ()->Unit,
-    updateState:()->Unit,
-    motionSensorManager: SensorUtils,
-    wifiManager: WifiManager,
-    timer: TimerUtils,
-    setStartSamplingTime: (String) -> Unit,
-    yaw: Float,
-    pitch: Float,
-    roll: Float,
-    isMonitoringAngles: Boolean,
-    toggleMonitoringAngles: () -> Unit,
-    waypoints: SnapshotStateList<Offset>,
-    changeBeta: (Float) -> Unit,
-    getBeta: () -> Float,
-    targetOffset: Offset?,
-    navigationStarted: Boolean,
-    loadingStarted: Boolean,
-    startFetching: () -> Unit,
-    endFetching: () -> Unit,
-    imuOffset: Offset?,
-    wifiOffset: Offset?,
-    onRefreshButtonClicked: () ->Unit,
-    setNavigationStartFalse: () -> Unit,
-    setLoadingStartFalse: () -> Unit
-) {
-    LaunchedEffect(state) {
-        pagerState.scrollToPage(state)
-    }
 
-    LaunchedEffect(pagerState.currentPage) {
-        updateState()
-    }
-
-    HorizontalPager(
-        modifier = Modifier
-            .fillMaxSize()
-            .zIndex(-1f),
-        state = pagerState,
-        userScrollEnabled = (pagerState.currentPage == 0),
-    ) { page ->
-        when (page) {
-            0 -> {
-                SampleHorizontalPage(
-                    context = context,  // Pass the context
-                    sensorManager = motionSensorManager,
-                    wifiManager = wifiManager,
-                    timer = timer,
-                    setStartSamplingTime = setStartSamplingTime,
-                    yaw = yaw,
-                    pitch = pitch,
-                    roll = roll,
-                    isMonitoringAngles = isMonitoringAngles,
-                    toggleMonitoringAngles = toggleMonitoringAngles,
-                    waypoints = waypoints,
-                    changeBeta = changeBeta,
-                    getBeta = getBeta
-                )
-            }
-
-            1 -> {
-                InferenceHorizontalPage(
-                    navigationStarted = navigationStarted,
-                    loadingStarted = loadingStarted,
-                    updateNavigationState = updateNavigationState,
-                    startFetching = startFetching,
-                    endFetching = endFetching,
-                    userPositionMeters = targetOffset,
-                    userHeading = yaw,
-                    waypoints = waypoints,
-                    yaw = yaw,
-                    imuOffset = imuOffset,
-                    wifiOffset = wifiOffset,
-                    targetOffset = targetOffset,
-                    onRefreshButtonClicked = onRefreshButtonClicked,
-                    setNavigationStartFalse = setNavigationStartFalse,
-                    setLoadingStartFalse = setLoadingStartFalse
-                )
-            }
-//            2 -> {
-//                TrackingHorizontalPage(
-//                    context = context,
-//                    waypoints = waypoints,
-//                    sensorManager = motionSensorManager,
-//                    wifiManager = wifiManager,
-//                    timer = timer
-//                )
-//            }
-        }
-
-    }
-}
 
 @Composable
 fun FilledCardExample(
@@ -645,35 +578,43 @@ fun wifiScan(wifiManager: WifiManager): Quadruple<String, Boolean, Long, String>
     return Quadruple("", false, 0, "Scanning failed")
 }
 
-fun drawWaypoints(
-    drawScope: DrawScope, meterPerPixel: Float, scaleFactor: Float,
-    screenWidth: Float, screenHeight: Float,
-    markerOffset: Offset, positionOffset: Offset,
-    waypoints: SnapshotStateList<Offset>
+suspend fun saveUserPreferences(
+    context: Context,
+    stride: Float,
+    beta: Float,
+    initialState: DoubleArray,
+    initialCovariance: Array<DoubleArray>,
+    matrixQ: Array<DoubleArray>,
+    matrixR: Array<DoubleArray>,
+    matrixRPowOne: Int,
+    matrixRPowTwo: Int
 ) {
-    var index = 0
-    for (waypoint in waypoints) {
-        index += 1
-        val realDelta = waypoint - positionOffset
-        val pixelDelta = realDelta / meterPerPixel * scaleFactor
-        Log.d("Map", "Pixel Delta: ${pixelDelta.x}, ${pixelDelta.y}")
-        var drawPosition = pixelDelta + markerOffset + drawScope.center
-        drawScope.drawCircle(
-            color = Color(0xFFFF0000),
-            radius = 20f, // Radius of glow
-            center = drawPosition
-        )
-        drawScope.drawContext.canvas.nativeCanvas.apply {
-            drawText(
-                index.toString(), // Convert the index to string
-                drawPosition.x + 6 * scaleFactor,
-                drawPosition.y + 6 * scaleFactor,
-                Paint().apply {
-                    color =
-                        android.graphics.Color.parseColor("#FF0000") // Set the desired text color
-                    textSize = 50f // Set the desired text size
-                }
-            )
-        }
+    context.dataStore.edit { preferences ->
+        preferences[UserPreferencesKeys.STRIDE] = stride
+
+        preferences[UserPreferencesKeys.BETA] = beta
+
+        preferences[UserPreferencesKeys.INITIAL_STATE_1] = initialState[0]
+        preferences[UserPreferencesKeys.INITIAL_STATE_2] = initialState[1]
+
+        preferences[UserPreferencesKeys.INITIAL_COVARIANCE_1] = initialCovariance[0][0]
+        preferences[UserPreferencesKeys.INITIAL_COVARIANCE_2] = initialCovariance[0][1]
+        preferences[UserPreferencesKeys.INITIAL_COVARIANCE_3] = initialCovariance[1][0]
+        preferences[UserPreferencesKeys.INITIAL_COVARIANCE_4] = initialCovariance[1][1]
+
+        preferences[UserPreferencesKeys.MATRIX_Q_1] = matrixQ[0][0]
+        preferences[UserPreferencesKeys.MATRIX_Q_2] = matrixQ[0][1]
+        preferences[UserPreferencesKeys.MATRIX_Q_3] = matrixQ[1][0]
+        preferences[UserPreferencesKeys.MATRIX_Q_4] = matrixQ[1][1]
+
+        preferences[UserPreferencesKeys.MATRIX_R_1] = matrixR[0][0]
+        preferences[UserPreferencesKeys.MATRIX_R_2] = matrixR[0][1]
+        preferences[UserPreferencesKeys.MATRIX_R_3] = matrixR[1][0]
+        preferences[UserPreferencesKeys.MATRIX_R_4] = matrixR[1][1]
+
+        preferences[UserPreferencesKeys.MATRIX_R_POW_1] = matrixRPowOne
+        preferences[UserPreferencesKeys.MATRIX_R_POW_2] = matrixRPowTwo
     }
 }
+
+

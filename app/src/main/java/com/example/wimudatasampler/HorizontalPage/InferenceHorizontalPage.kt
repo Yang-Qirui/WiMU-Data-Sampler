@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.MyLocation
@@ -39,7 +40,9 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +66,7 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -78,11 +82,10 @@ enum class NavUiMode(val value: Int) {
 fun InferenceHorizontalPage(
     navigationStarted: Boolean,
     loadingStarted: Boolean,
-    updateNavigationState: () -> Unit,
     startFetching: () -> Unit,
     endFetching: () -> Unit,
-    userPositionMeters: Offset?, // 用户实际位置（米为单位）
-    userHeading: Float, // 用户朝向角度（角度制，0-360）
+    userPositionMeters: Offset?, // User's physical location (in meters)
+    userHeading: Float, // User orientation Angle (0-360)
     waypoints: SnapshotStateList<Offset>,
     modifier: Modifier = Modifier,
     yaw: Float,
@@ -93,6 +96,8 @@ fun InferenceHorizontalPage(
     setNavigationStartFalse: () -> Unit,
     setLoadingStartFalse: () -> Unit
 ) {
+    val scope = rememberCoroutineScope()
+
     val imageBitmap = ImageBitmap.imageResource(R.drawable.academic_building_2f)
     // Map metadata
     val mapWidthMeters = 277f // Actual map width (m)
@@ -120,9 +125,8 @@ fun InferenceHorizontalPage(
         mapHeightPixels * metersPerPixel / 2f
     )
     // Transition state
-    var scale by remember { mutableFloatStateOf(1f) }
+    var scale by remember { mutableFloatStateOf(2f) }
     var gestureRotationDegrees by remember { mutableFloatStateOf(0f) }
-    var lastUserPosition by remember { mutableStateOf(Offset.Zero) }
 
     var userScreenPos by remember {
         mutableStateOf(
@@ -131,15 +135,14 @@ fun InferenceHorizontalPage(
             } else {
                 Offset.Zero
             }
-
         )
     }
-
-    var uiMode by remember { mutableIntStateOf(1) }
+    var uiMode by remember { mutableIntStateOf(NavUiMode.USER_POS_FREE_CENTER_DIR_FREE.value) }
     var showUiModeDialog by remember { mutableStateOf(false) }
 
     var translation by remember { mutableStateOf(Offset.Zero) }
     val translationAnimation = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
+    val userPosAnimation = remember { Animatable(userScreenPos, Offset.VectorConverter) }
 
     LaunchedEffect(canvasCenter) {
         val targetTranslation = canvasCenter - userScreenPos
@@ -151,19 +154,26 @@ fun InferenceHorizontalPage(
 
     LaunchedEffect(userPositionMeters) {
         userPositionMeters?.let { newPos ->
-                userScreenPos = (userPosOffsetMeters + newPos) * pixelsPerMeter
+            userPosAnimation.animateTo(
+                targetValue = (userPosOffsetMeters + newPos) * pixelsPerMeter,
+                animationSpec = tween(500, easing = FastOutSlowInEasing)
+            )
+            if (uiMode != NavUiMode.USER_POS_FREE_CENTER_DIR_FREE.value) {
                 val targetTranslation = canvasCenter - userScreenPos
                 translationAnimation.animateTo(
                     targetValue = targetTranslation,
-                    animationSpec = tween(1000, easing = FastOutSlowInEasing)
+                    animationSpec = tween(500, easing = FastOutSlowInEasing)
                 )
-                lastUserPosition = newPos
             }
-
+        }
     }
 
     LaunchedEffect(translationAnimation.value) {
         translation = translationAnimation.value
+    }
+
+    LaunchedEffect(userPosAnimation.value) {
+        userScreenPos = userPosAnimation.value
     }
 
     Box(
@@ -204,7 +214,6 @@ fun InferenceHorizontalPage(
         val secondaryContainerColor = MaterialTheme.colorScheme.secondaryContainer
         val onSecondaryContainerColor = MaterialTheme.colorScheme.onSecondaryContainer
 
-
         // Map background
         Canvas(
             modifier = Modifier
@@ -219,9 +228,7 @@ fun InferenceHorizontalPage(
                 scale(scale, scale, pivot = userScreenPos)
                 rotate(
                     if (uiMode == NavUiMode.USER_POS_FIX_CENTER_DIR_FIX_UP.value
-                        &&
-                        navigationStarted
-                    ) (-userHeading - 180) else 0.0f,
+                    ) (- userHeading + 90) else 0.0f,
                     pivot = userScreenPos
                 )
             }) {
@@ -233,59 +240,23 @@ fun InferenceHorizontalPage(
                 )
 
                 if (uiMode == NavUiMode.USER_POS_FIX_CENTER_DIR_FIX_UP.value) {
-                    if (navigationStarted) {
-                        drawUserMarker(
-                            position = userScreenPos,
-                            headingDegrees = userHeading - 90,
-                            scale = scale,
-                            mainColor = onSecondaryContainerColor,
-                            secondColor = secondaryContainerColor
-                        )
-                    } else {
-                        drawUserMarker(
-                            position = userScreenPos,
-                            headingDegrees = userHeading + 90,
-                            scale = scale,
-                            mainColor = onSecondaryContainerColor,
-                            secondColor = secondaryContainerColor
-                        )
-                    }
-                } else if (uiMode == NavUiMode.USER_POS_FIX_CENTER_DIR_FREE.value) {
-                    if (navigationStarted) {
-                        drawUserMarker(
-                            position = userScreenPos,
-                            headingDegrees = userHeading,
-                            scale = scale,
-                            mainColor = onSecondaryContainerColor,
-                            secondColor = secondaryContainerColor
-                        )
-                    } else {
-                        drawUserMarker(
-                            position = userScreenPos,
-                            headingDegrees = userHeading + 90,
-                            scale = scale,
-                            mainColor = onSecondaryContainerColor,
-                            secondColor = secondaryContainerColor
-                        )
-                    }
-                } else { // uiMode == NavUiMode.USER_POS_FREE_CENTER_DIR_FREE.value
-                    if (navigationStarted) {
-                        drawUserMarker(
-                            position = userScreenPos,
-                            headingDegrees = userHeading,
-                            scale = scale,
-                            mainColor = onSecondaryContainerColor,
-                            secondColor = secondaryContainerColor
-                        )
-                    } else {
-                        drawUserMarker(
-                            position = userScreenPos,
-                            headingDegrees = userHeading + 90,
-                            scale = scale,
-                            mainColor = onSecondaryContainerColor,
-                            secondColor = secondaryContainerColor
-                        )
-                    }
+
+                    drawUserMarker(
+                        position = userScreenPos,
+                        headingDegrees = userHeading,
+                        scale = scale,
+                        mainColor = onSecondaryContainerColor,
+                        secondColor = secondaryContainerColor
+                    )
+
+                } else {
+                    drawUserMarker(
+                        position = userScreenPos,
+                        headingDegrees = userHeading,
+                        scale = scale,
+                        mainColor = onSecondaryContainerColor,
+                        secondColor = secondaryContainerColor
+                    )
                 }
 
                 waypoints.forEachIndexed { index, waypoint ->
@@ -299,8 +270,8 @@ fun InferenceHorizontalPage(
 
                     drawContext.canvas.nativeCanvas.apply {
                         val paint = android.graphics.Paint().apply {
-                            color = onTertiaryContainerColor.toArgb() // Convert Compose Color to ARGB
-                            textSize = 140/scale.sp.toPx() // Convert sp to pixels
+                            color = onTertiaryContainerColor.toArgb()
+                            textSize = 140/scale.sp.toPx()
                         }
                         val num = index + 1
                         drawText(
@@ -334,10 +305,10 @@ fun InferenceHorizontalPage(
             // Reverse scaling (consider reference points)
             val scaledPos = (afterTranslation - userScreenPos) / scale + userScreenPos
             // Reverse rotation (according to current mode)
-            val rotationAngle = if (uiMode == NavUiMode.USER_POS_FIX_CENTER_DIR_FIX_UP.value && navigationStarted) {
-                -Math.toRadians((-userHeading + 180).toDouble()).toFloat()
+            val rotationAngle = if (uiMode == NavUiMode.USER_POS_FIX_CENTER_DIR_FIX_UP.value) {
+                -Math.toRadians((-userHeading + 90).toDouble()).toFloat()
             } else {
-                0f
+                0.0f
             }
             val x = scaledPos.x - userScreenPos.x
             val y = scaledPos.y - userScreenPos.y
@@ -346,7 +317,7 @@ fun InferenceHorizontalPage(
                 x * sin(rotationAngle) + y * cos(rotationAngle) + userScreenPos.y
             )
             // Convert to metric coordinates
-            return (rotatedPos - userScreenPos) / pixelsPerMeter
+            return (rotatedPos ) / pixelsPerMeter - userPosOffsetMeters
         }
 
         longPressPosition?.let { screenPos ->
@@ -370,14 +341,24 @@ fun InferenceHorizontalPage(
             )
         }
 
-        Text(
+        Box(
             modifier = Modifier
-                .align(Alignment.TopCenter),
-            text = when {
-                !navigationStarted -> "Ready to go"
-                else -> "yaw ${yaw.roundToInt()}, ${imuOffset?.x?.roundToInt()}, ${imuOffset?.y?.roundToInt()}, ${wifiOffset?.x?.roundToInt()}, ${wifiOffset?.y?.roundToInt()}, ${targetOffset?.x?.roundToInt()}, ${targetOffset?.y?.roundToInt()}"
-            }
-        )
+                .align(Alignment.TopCenter).padding(top = 12.dp)
+        ) {
+            Text(
+                modifier = Modifier
+                    .background(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .padding(vertical = 4.dp, horizontal = 8.dp),
+                text = when {
+                    !navigationStarted -> "Ready to go"
+                    else -> "yaw ${yaw.roundToInt()}, ${imuOffset?.x?.roundToInt()}, ${imuOffset?.y?.roundToInt()}, ${wifiOffset?.x?.roundToInt()}, ${wifiOffset?.y?.roundToInt()}, ${targetOffset?.x?.roundToInt()}, ${targetOffset?.y?.roundToInt()}"
+                },
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
 
         IconButton(
             onClick = { showUiModeDialog = true },
@@ -463,7 +444,13 @@ fun InferenceHorizontalPage(
                             selected = (uiMode == NavUiMode.USER_POS_FIX_CENTER_DIR_FIX_UP.value),
                             onClick = {
                                 val targetTranslation = canvasCenter - userScreenPos
-                                translation = targetTranslation
+                                scope.launch {
+                                    translationAnimation.snapTo(translation)
+                                    translationAnimation.animateTo(
+                                        targetValue = targetTranslation,
+                                        animationSpec = tween(500, easing = FastOutSlowInEasing)
+                                    )
+                                }
                                 uiMode = NavUiMode.USER_POS_FIX_CENTER_DIR_FIX_UP.value
                                 showUiModeDialog = false
                             }
@@ -478,7 +465,13 @@ fun InferenceHorizontalPage(
                             selected = (uiMode == NavUiMode.USER_POS_FIX_CENTER_DIR_FREE.value),
                             onClick = {
                                 val targetTranslation = canvasCenter - userScreenPos
-                                translation = targetTranslation
+                                scope.launch {
+                                    translationAnimation.snapTo(translation)
+                                    translationAnimation.animateTo(
+                                        targetValue = targetTranslation,
+                                        animationSpec = tween(500, easing = FastOutSlowInEasing)
+                                    )
+                                }
                                 uiMode = NavUiMode.USER_POS_FIX_CENTER_DIR_FREE.value
                                 showUiModeDialog = false
                             }
@@ -519,11 +512,6 @@ private fun DrawScope.drawUserMarker(
     mainColor:Color,
     secondColor: Color
 ) {
-    val headingRadians = Math.toRadians(headingDegrees.toDouble()).toFloat()
-    val direction = Offset(
-        x = -cos(headingRadians),
-        y = -sin(headingRadians)
-    ) * 30f
     val centerX = position.x
     val centerY = position.y
     // Radius

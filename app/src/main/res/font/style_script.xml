@@ -3,5 +3,5 @@
     <font
         android:fontStyle="normal"
         android:fontWeight="400"
-        android:font="@font/style_script_regular" />
+        android:font="@font/playfair_display_semi_bold" />
 </font-family>

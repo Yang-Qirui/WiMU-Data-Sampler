@@ -1,5 +1,6 @@
 package com.example.wimudatasampler.HorizontalPage
 
+import android.graphics.Paint
 import android.net.wifi.WifiManager
 import android.util.Log
 import androidx.compose.foundation.Canvas
@@ -31,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
@@ -43,7 +46,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toOffset
 import com.example.wimudatasampler.FilledCardExample
 import com.example.wimudatasampler.R
-import com.example.wimudatasampler.drawWaypoints
 import com.example.wimudatasampler.utils.SensorUtils
 import com.example.wimudatasampler.utils.TimerUtils
 import java.text.SimpleDateFormat
@@ -273,6 +275,39 @@ import kotlin.math.roundToInt
 //            ButtonDefaults.buttonColors()
 //        }) {
 //            Text(text = if (clicked) "Stop Sampling" else "Start Sampling")
+//        }
+//    }
+//}
+//
+//fun drawWaypoints(
+//    drawScope: DrawScope, meterPerPixel: Float, scaleFactor: Float,
+//    screenWidth: Float, screenHeight: Float,
+//    markerOffset: Offset, positionOffset: Offset,
+//    waypoints: SnapshotStateList<Offset>
+//) {
+//    var index = 0
+//    for (waypoint in waypoints) {
+//        index += 1
+//        val realDelta = waypoint - positionOffset
+//        val pixelDelta = realDelta / meterPerPixel * scaleFactor
+//        Log.d("Map", "Pixel Delta: ${pixelDelta.x}, ${pixelDelta.y}")
+//        var drawPosition = pixelDelta + markerOffset + drawScope.center
+//        drawScope.drawCircle(
+//            color = Color(0xFFFF0000),
+//            radius = 20f, // Radius of glow
+//            center = drawPosition
+//        )
+//        drawScope.drawContext.canvas.nativeCanvas.apply {
+//            drawText(
+//                index.toString(), // Convert the index to string
+//                drawPosition.x + 6 * scaleFactor,
+//                drawPosition.y + 6 * scaleFactor,
+//                Paint().apply {
+//                    color =
+//                        android.graphics.Color.parseColor("#FF0000") // Set the desired text color
+//                    textSize = 50f // Set the desired text size
+//                }
+//            )
 //        }
 //    }
 //}
