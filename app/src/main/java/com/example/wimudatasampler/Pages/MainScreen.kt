@@ -260,14 +260,7 @@ fun AppHorizontalPager(
                     wifiManager = wifiManager,
                     timer = timer,
                     setStartSamplingTime = setStartSamplingTime,
-                    yaw = yaw,
-                    pitch = pitch,
-                    roll = roll,
-                    isMonitoringAngles = isMonitoringAngles,
-                    toggleMonitoringAngles = toggleMonitoringAngles,
                     waypoints = waypoints,
-                    changeBeta = changeBeta,
-                    getBeta = getBeta
                 )
             }
 
