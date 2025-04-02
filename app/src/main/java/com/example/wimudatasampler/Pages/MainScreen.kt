@@ -1,6 +1,7 @@
 package com.example.wimudatasampler.Pages
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.wifi.WifiManager
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,9 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -49,8 +53,10 @@ import com.example.wimudatasampler.HorizontalPage.SampleHorizontalPage
 import com.example.wimudatasampler.MapViewModel
 import com.example.wimudatasampler.R
 import com.example.wimudatasampler.navigation.MainActivityDestinations
+import com.example.wimudatasampler.utils.ImageUtil.Companion.getImageFolderPath
 import com.example.wimudatasampler.utils.SensorUtils
 import com.example.wimudatasampler.utils.TimerUtils
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -280,9 +286,13 @@ fun AppHorizontalPager(
 
             1 -> {
                 selectedMap?.let {
+                    val folderPath = getImageFolderPath(activityContext)
+                    val fullPath = File(folderPath, it.content).absolutePath
+                    val imageBitmap = BitmapFactory.decodeFile(fullPath)?.asImageBitmap()?: ImageBitmap.imageResource(R.drawable.image_placeholder)
+
                     InferenceHorizontalPage(
                         context = activityContext,
-                        selectedMap = it,
+                        imageBitmap = imageBitmap,
                         navigationStarted = navigationStarted,
                         loadingStarted = loadingStarted,
                         startFetching = startFetching,
@@ -290,7 +300,6 @@ fun AppHorizontalPager(
                         userPositionMeters = targetOffset,
                         userHeading = yaw,
                         waypoints = waypoints,
-                        yaw = yaw,
                         imuOffset = imuOffset,
                         wifiOffset = wifiOffset,
                         targetOffset = targetOffset,

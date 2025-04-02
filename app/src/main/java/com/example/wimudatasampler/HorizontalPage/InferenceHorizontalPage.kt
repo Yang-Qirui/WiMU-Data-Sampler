@@ -94,20 +94,15 @@ fun InferenceHorizontalPage(
     userHeading: Float, // User orientation Angle (0-360)
     waypoints: SnapshotStateList<Offset>,
     modifier: Modifier = Modifier,
-    yaw: Float,
     imuOffset: Offset?,
     wifiOffset: Offset?,
     targetOffset: Offset?,
     onRefreshButtonClicked: () -> Unit,
     setNavigationStartFalse: () -> Unit,
     setLoadingStartFalse: () -> Unit,
-    selectedMap: MapModels.ImageMap
+    imageBitmap: ImageBitmap
 ) {
     val scope = rememberCoroutineScope()
-
-    val folderPath = getImageFolderPath(context)
-    val fullPath = File(folderPath, selectedMap.content).absolutePath
-    val imageBitmap = BitmapFactory.decodeFile(fullPath)?.asImageBitmap()?:ImageBitmap.imageResource(R.drawable.image_placeholder)
 
     // Map metadata
     val mapWidthMeters = 277f // Actual map width (m)
@@ -364,7 +359,7 @@ fun InferenceHorizontalPage(
                     .padding(vertical = 4.dp, horizontal = 8.dp),
                 text = when {
                     !navigationStarted -> "Ready to go"
-                    else -> "yaw ${yaw.roundToInt()}, ${imuOffset?.x?.roundToInt()}, ${imuOffset?.y?.roundToInt()}, ${wifiOffset?.x?.roundToInt()}, ${wifiOffset?.y?.roundToInt()}, ${targetOffset?.x?.roundToInt()}, ${targetOffset?.y?.roundToInt()}"
+                    else -> "yaw ${userHeading.roundToInt()}, ${imuOffset?.x?.roundToInt()}, ${imuOffset?.y?.roundToInt()}, ${wifiOffset?.x?.roundToInt()}, ${wifiOffset?.y?.roundToInt()}, ${targetOffset?.x?.roundToInt()}, ${targetOffset?.y?.roundToInt()}"
                 },
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
