@@ -65,6 +65,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
+import com.example.wimudatasampler.DataClass.MapModels
 import kotlinx.coroutines.launch
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -94,12 +95,13 @@ fun InferenceHorizontalPage(
     onRefreshButtonClicked: () -> Unit,
     setNavigationStartFalse: () -> Unit,
     setLoadingStartFalse: () -> Unit,
-    imageBitmap: ImageBitmap
+    imageBitmap: ImageBitmap,
+    selectedMap: MapModels.ImageMap
 ) {
     val scope = rememberCoroutineScope()
 
     // Map metadata
-    val mapWidthMeters = 277f // Actual map width (m)
+    val mapWidthMeters = selectedMap.metersForMapWidth // Actual map width (m)
     val mapWidthPixels = imageBitmap.width.toFloat()
     val mapHeightPixels = imageBitmap.height.toFloat()
     val mapAspectRatio = mapWidthPixels / mapHeightPixels

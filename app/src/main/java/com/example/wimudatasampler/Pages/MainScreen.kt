@@ -29,7 +29,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -60,9 +59,7 @@ import com.example.wimudatasampler.navigation.MainActivityDestinations
 import com.example.wimudatasampler.utils.ImageUtil.Companion.getImageFolderPath
 import com.example.wimudatasampler.utils.SensorUtils
 import com.example.wimudatasampler.utils.TimerUtils
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -318,6 +315,7 @@ fun AppHorizontalPager(
                         imageBitmap?.let { bitmap ->
                             InferenceHorizontalPage(
                                 context = activityContext,
+                                selectedMap = map,
                                 imageBitmap = bitmap,
                                 navigationStarted = navigationStarted,
                                 loadingStarted = loadingStarted,
