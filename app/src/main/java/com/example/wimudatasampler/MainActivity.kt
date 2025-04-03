@@ -555,7 +555,7 @@ fun wifiScan(wifiManager: WifiManager): Quadruple<String, Boolean, Long, String>
         Log.d("min ts", "$minTimestamp ")
         Log.d("DIFF", "${(maxTimestamp - minTimestamp) / 1_000_000}")
         Log.d("Debug", "$gap")
-        if (gap < 500) {
+        if (gap < 1500) {
             return Quadruple(resultString, true, minTimestamp, "Success. $gap")
         }
         else {
