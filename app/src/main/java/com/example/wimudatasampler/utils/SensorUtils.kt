@@ -16,11 +16,11 @@ class SensorUtils(context: Context) : SensorEventListener {
     private var accSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
     private var singleStepSensor: Sensor? =
         sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
-
     private var lastRotationVector: FloatArray? = null
     private var lastStepCount: Float? = null
     private var lastAcc: FloatArray? = null
     private var lastStepTimestamp: Long? = null
+    private var stepTimestamps = mutableListOf<Long>()
 
     interface SensorDataListener {
         fun onRotationVectorChanged(rotationVector: FloatArray)
@@ -33,6 +33,7 @@ class SensorUtils(context: Context) : SensorEventListener {
 
     fun startMonitoring(listener: SensorDataListener) {
         this.sensorDataListener = listener
+        this.stepTimestamps = mutableListOf()
         val rotationSuccess = sensorManager.registerListener(
             this,
             rotationVectorSensor,
@@ -95,7 +96,9 @@ class SensorUtils(context: Context) : SensorEventListener {
             }
             Sensor.TYPE_STEP_DETECTOR -> {
                 if (event.values[0] == 1.0f) {
-                    lastStepTimestamp = System.currentTimeMillis()
+                    val ts = System.currentTimeMillis()
+                    lastStepTimestamp = ts
+                    stepTimestamps.add(ts)
                     sensorDataListener?.onSingleStepChanged()
                 }
             }
@@ -110,4 +113,5 @@ class SensorUtils(context: Context) : SensorEventListener {
     fun getLastStepCount(): Float? = lastStepCount
     fun getLastAcc(): FloatArray? = lastAcc
     fun getLastSingleStepTime(): Long? = lastStepTimestamp
+    fun getStepTimestamps(): List<Long> = stepTimestamps.toList()
 }

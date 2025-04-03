@@ -43,7 +43,8 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         rotationFile: File,
         eulerFile: File,
         stepFile: File,
-        singleStepFile: File
+        singleStepFile: File,
+        singleStepRecordsFile: File
     ) {
         if (!isSensorTaskRunning.get()) return
 
@@ -51,6 +52,7 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         val rotationVector = sensorManager.getLastRotationVector() ?: floatArrayOf(0f, 0f, 0f, 0f)
         val stepCount = sensorManager.getLastStepCount() ?: 0f
         val currentSingleStepTime = sensorManager.getLastSingleStepTime() ?: 0
+        val singleStepRecords = sensorManager.getStepTimestamps() ?: emptyList()
 
         val currentTime = System.currentTimeMillis()
         try {
@@ -89,8 +91,8 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         }
 
         try {
-            val singleStepWriter = FileWriter(singleStepFile, true)
             if (currentSingleStepTime != lastSingleStepTime) {
+                val singleStepWriter = FileWriter(singleStepFile, true)
                 singleStepWriter.append("$currentSingleStepTime\n")
                 singleStepWriter.flush()
                 singleStepWriter.close()
@@ -100,6 +102,16 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
             e.printStackTrace()
         }
 
+        try {
+            val singleStepRecordWriter = FileWriter(singleStepRecordsFile, false)
+            for (item in singleStepRecords) {
+                singleStepRecordWriter.write("$item\n")
+            }
+            singleStepRecordWriter.flush()
+            singleStepRecordWriter.close()
+        } catch (e: IOException) {
+            e.printStackTrace()
+        }
     }
 
     fun runSensorTaskAtFrequency(
@@ -125,12 +137,13 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         val rotationFile = File(dir, "rotation.txt")
         val eulerFile = File(dir, "euler.txt")
         val singleStepFile = File(dir, "single_step.txt")
+        val singleStepRecordsFile = File(dir, "single_step_rec.txt")
 
 
         isSensorTaskRunning.set(true)
         sensorJob = coroutineScope.launch {
             while (isSensorTaskRunning.get() && isActive) {
-                collectSensorData(sensorManager, rotationFile, eulerFile, stepFile, singleStepFile)
+                collectSensorData(sensorManager, rotationFile, eulerFile, stepFile, singleStepFile, singleStepRecordsFile)
                 delay((frequency * 1000).toLong())
             }
         }
