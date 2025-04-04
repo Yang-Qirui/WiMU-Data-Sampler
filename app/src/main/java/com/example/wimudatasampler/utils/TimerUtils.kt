@@ -8,10 +8,8 @@ import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
-import com.example.wimudatasampler.wifiScan
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,8 +21,13 @@ import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
 
-@Suppress("DEPRECATION")
-class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
+class TimerUtils(
+    private val coroutineScope: CoroutineScope,
+    private val getWiFiScanningResultCallback: () -> MutableList<String>,
+    private val clearWiFiScanningResultCallback: () -> Unit,
+    private val wifiManagerScanning: () -> Boolean,
+    context: Context,
+){
     private var isSensorTaskRunning = AtomicBoolean(false)
     private var isWifiTaskRunning = AtomicBoolean(false)
     private var isTestFreqTaskRunning = AtomicBoolean(false)
@@ -47,7 +50,6 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         singleStepRecordsFile: File
     ) {
         if (!isSensorTaskRunning.get()) return
-
         // Use the last known sensor data, or fallback to default if not available
         val rotationVector = sensorManager.getLastRotationVector() ?: floatArrayOf(0f, 0f, 0f, 0f)
         val stepCount = sensorManager.getLastStepCount() ?: 0f
@@ -171,29 +173,25 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         }
         val wifiFile = File(dir, "wifi.txt")
         isWifiTaskRunning.set(true)
-
+        clearWiFiScanningResultCallback()
         wifiJob = coroutineScope.launch {
             while (isWifiTaskRunning.get() && isActive) {
+                val invokeSuccess = wifiManagerScanning()
+                Log.d("INVOKE", "$invokeSuccess")
                 try {
                     if (!isWifiTaskRunning.get()) return@launch
-                    val (wifiResults, success, latestMinTimestamp, info) = wifiScan(wifiManager)
-                    wifiScanningInfo = info
-                    if (success) {
-                        if (latestMinTimestamp != lastMinTimestamp) {
-                            lastTwoScanInterval = latestMinTimestamp - lastMinTimestamp
-                            lastMinTimestamp = latestMinTimestamp
+                    val wifiResults = getWiFiScanningResultCallback()
+                    wifiScanningInfo = "Success"
+                    try {
+                        val wifiWriter = FileWriter(wifiFile, false)
+                        if (collectWaypoint) {
+                            wifiWriter.append("${waypointPosition?.x}, ${waypointPosition?.y}\n")
                         }
-                        try {
-                            val wifiWriter = FileWriter(wifiFile, true)
-                            if (collectWaypoint) {
-                                wifiWriter.append("${waypointPosition?.x}, ${waypointPosition?.y}\n")
-                            }
-                            wifiWriter.append("$wifiResults\n")
-                            wifiWriter.flush()
-                            wifiWriter.close()
-                        } catch (e: IOException) {
-                            e.printStackTrace()
-                        }
+                        wifiWriter.append("$wifiResults\n")
+                        wifiWriter.flush()
+                        wifiWriter.close()
+                    } catch (e: IOException) {
+                        e.printStackTrace()
                     }
                     delay((frequencyY * 1000).toLong())
                 }catch (e: CancellationException){
@@ -203,28 +201,28 @@ class TimerUtils (private val coroutineScope: CoroutineScope, context: Context){
         }
     }
 
-    fun runTestFrequencyTask(
-        wifiManager: WifiManager,
-        frequency: Float
-    ) {
-        isTestFreqTaskRunning.set(true)
-        testFreqJob = coroutineScope.launch {
-            while (isTestFreqTaskRunning.get() && isActive) {
-                try {
-                    if (!isTestFreqTaskRunning.get()) return@launch
-                    val (wifiResults, success, latestMinTimestamp, info) = wifiScan(wifiManager)
-                    wifiScanningInfo = info
-                    if (success && latestMinTimestamp != lastMinTimestamp) {
-                        lastTwoScanInterval = latestMinTimestamp - lastMinTimestamp
-                        lastMinTimestamp = latestMinTimestamp
-                    }
-                    delay((frequency * 1000).toLong())
-                }catch (e: CancellationException){
-                    break
-                }
-            }
-        }
-    }
+//    fun runTestFrequencyTask(
+//        wifiManager: WifiManager,
+//        frequency: Float
+//    ) {
+//        isTestFreqTaskRunning.set(true)
+//        testFreqJob = coroutineScope.launch {
+//            while (isTestFreqTaskRunning.get() && isActive) {
+//                try {
+//                    if (!isTestFreqTaskRunning.get()) return@launch
+//                    val wifi = wifiScan(wifiManager)
+//                    wifiScanningInfo = info
+//                    if (success && latestMinTimestamp != lastMinTimestamp) {
+//                        lastTwoScanInterval = latestMinTimestamp - lastMinTimestamp
+//                        lastMinTimestamp = latestMinTimestamp
+//                    }
+//                    delay((frequency * 1000).toLong())
+//                }catch (e: CancellationException){
+//                    break
+//                }
+//            }
+//        }
+//    }
 
     fun setSavingDir(dir: String) {
         savingMainDir = dir

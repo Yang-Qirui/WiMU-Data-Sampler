@@ -50,15 +50,12 @@ import androidx.datastore.preferences.core.edit
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.example.wimudatasampler.DataClass.Coordinate
 import com.example.wimudatasampler.Pages.MainScreen
 import com.example.wimudatasampler.Pages.MapChoosingScreen
 import com.example.wimudatasampler.Pages.SettingScreen
 import com.example.wimudatasampler.navigation.MainActivityDestinations
-import com.example.wimudatasampler.network.NetworkClient
 import com.example.wimudatasampler.ui.theme.WiMUTheme
 import com.example.wimudatasampler.utils.KalmanFilter
-import com.example.wimudatasampler.utils.Quadruple
 import com.example.wimudatasampler.utils.SensorUtils
 import com.example.wimudatasampler.utils.TimerUtils
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
@@ -66,9 +63,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 import kotlin.math.cos
 import kotlin.math.sin
-import io.ktor.client.statement.*
 import kotlinx.coroutines.*
-import kotlinx.serialization.json.Json
 import kotlin.math.pow
 import kotlin.math.sqrt
 
@@ -92,11 +87,10 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var showStepCountDialog by mutableStateOf(false)  // 控制弹窗显示状态
     private var stepCount by mutableFloatStateOf(0f)  // 保存步数值
     private var waypoints = mutableStateListOf<Offset>()
-    private var trackingWaypoints = mutableStateListOf<Offset>()
     private var wifiOffset by mutableStateOf<Offset?>(null)
     private var imuOffset by mutableStateOf<Offset?>(null)
     private var targetOffset by mutableStateOf(Offset.Zero)
-
+    private var wifiScanningResults = mutableListOf<String>()
     private var navigationStarted by mutableStateOf(false)
     private var loadingStarted by mutableStateOf(false)
 
@@ -174,7 +168,8 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         var isWarmupCompleted = false
         scope.launch {
             while (true) {
-                val (wifiResults, success, lastMinTimestamp) = wifiScan(wifiManager)
+                val success = wifiManager.startScan()
+                // TODO: Support the newest wifi scanning logic
                 if (success) {
                     if (!isInitialLoad) {
                         loadingStarted = true
@@ -182,50 +177,50 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                     }
                     Log.d("Map", "Wifi Scan Results")
 //                    Log.d("BETA", beta.toString())
-                    try {
-                        val response = NetworkClient.fetchData(wifiResults)
-                        Log.d("response", response.bodyAsText())
-                        var coordinate: Coordinate?
-                        try {
-                            coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
-                        } catch (e: Exception) {
-                            delay(5000)
-                            continue
-                        }
-                        wifiOffset = Offset(coordinate.x, coordinate.y)
-
-                        Log.d("wifiOffset", wifiOffset.toString())
-                        if (warmupCounter > 2) {
-                            if (!isWarmupCompleted) {
-                                navigationStarted = true
-                                loadingStarted = false
-                                isWarmupCompleted = true
-                            }
-                            if (imuOffset == null) {
-                                imuOffset = Offset(coordinate.x, coordinate.y)
-                                filter.setInit(
-                                    doubleArrayOf(
-                                        coordinate.x.toDouble(),
-                                        coordinate.y.toDouble()
-                                    )
-                                )
-                                targetOffset = Offset(coordinate.x, coordinate.y)
-                            } else if (imuOffset != null) {
-                                filter.update(
-                                    doubleArrayOf(
-                                        coordinate.x.toDouble(),
-                                        coordinate.y.toDouble()
-                                    )
-                                )
-                                val (finalX, finalY) = filter.getState()
-                                targetOffset = Offset(finalX.toFloat(), finalY.toFloat())
-                                imuOffset = Offset(finalX.toFloat(), finalY.toFloat())
-                            }
-                        }
-                        warmupCounter += 1
-                    } catch (e: Exception) {
-                        Log.e("Http exception", e.toString())
-                    }
+//                    try {
+//                        val response = NetworkClient.fetchData(wifiResults)
+//                        Log.d("response", response.bodyAsText())
+//                        var coordinate: Coordinate?
+//                        try {
+//                            coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
+//                        } catch (e: Exception) {
+//                            delay(5000)
+//                            continue
+//                        }
+//                        wifiOffset = Offset(coordinate.x, coordinate.y)
+//
+//                        Log.d("wifiOffset", wifiOffset.toString())
+//                        if (warmupCounter > 2) {
+//                            if (!isWarmupCompleted) {
+//                                navigationStarted = true
+//                                loadingStarted = false
+//                                isWarmupCompleted = true
+//                            }
+//                            if (imuOffset == null) {
+//                                imuOffset = Offset(coordinate.x, coordinate.y)
+//                                filter.setInit(
+//                                    doubleArrayOf(
+//                                        coordinate.x.toDouble(),
+//                                        coordinate.y.toDouble()
+//                                    )
+//                                )
+//                                targetOffset = Offset(coordinate.x, coordinate.y)
+//                            } else if (imuOffset != null) {
+//                                filter.update(
+//                                    doubleArrayOf(
+//                                        coordinate.x.toDouble(),
+//                                        coordinate.y.toDouble()
+//                                    )
+//                                )
+//                                val (finalX, finalY) = filter.getState()
+//                                targetOffset = Offset(finalX.toFloat(), finalY.toFloat())
+//                                imuOffset = Offset(finalX.toFloat(), finalY.toFloat())
+//                            }
+//                        }
+//                        warmupCounter += 1
+//                    } catch (e: Exception) {
+//                        Log.e("Http exception", e.toString())
+//                    }
                 }
                 delay(5000)
             }
@@ -433,14 +428,28 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
         wifiManager = getSystemService(WIFI_SERVICE) as WifiManager
         wifiScanReceiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {}
+            @SuppressLint("MissingPermission")
+            override fun onReceive(context: Context, intent: Intent) {
+                val receivedTime = System.currentTimeMillis()
+                Log.d("RECEIVED", "Received at ${SystemClock.elapsedRealtime()}")
+                val scanResults = wifiManager.scanResults
+                val bootTime = System.currentTimeMillis() - SystemClock.elapsedRealtime()
+                val resultList = scanResults.map { scanResult ->
+                    "${scanResult.timestamp} ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level}"
+                }
+
+                for (result in resultList) {
+                    wifiScanningResults.add(result)
+                    Log.d("RECEIVED_RES", result)
+                }
+            }
         }
 
         val intentFilter = IntentFilter()
         intentFilter.addAction(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
         registerReceiver(wifiScanReceiver, intentFilter, RECEIVER_NOT_EXPORTED)
 
-        timer = TimerUtils(scope, this)
+        timer = TimerUtils(scope, {wifiScanningResults}, {wifiScanningResults.clear()}, { wifiManager.startScan() }, this)
         motionSensorManager = SensorUtils(this)
         motionSensorManager.startMonitoring(this)
     }
@@ -502,7 +511,6 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 }
 
 
-
 @Composable
 fun FilledCardExample(
     offset: Offset,
@@ -536,34 +544,6 @@ fun FilledCardExample(
     }
 }
 
-@SuppressLint("MissingPermission")
-@Suppress("DEPRECATION")
-fun wifiScan(wifiManager: WifiManager): Quadruple<String, Boolean, Long, String> {
-    val success = wifiManager.startScan()
-    if (success) {
-        val scanResults = wifiManager.scanResults
-        // TODO: currentTimeMillis change
-        val currentTime = System.currentTimeMillis()
-        val resultList = scanResults.map { scanResult ->
-            "$currentTime ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level}"
-        }
-        val resultString = resultList.joinToString("\n")  // 将每个结果拼接为字符串，使用换行分隔
-        val bootTime = System.currentTimeMillis() - SystemClock.elapsedRealtime()
-        val maxTimestamp = scanResults.maxOf { it.timestamp }
-        val minTimestamp = scanResults.minOf { it.timestamp }
-        val gap = currentTime - (bootTime + maxTimestamp / 1_000)
-        Log.d("min ts", "$minTimestamp ")
-        Log.d("DIFF", "${(maxTimestamp - minTimestamp) / 1_000_000}")
-        Log.d("Debug", "$gap")
-        if (gap < 1500) {
-            return Quadruple(resultString, true, minTimestamp, "Success. $gap")
-        }
-        else {
-            return Quadruple("", false, 0, "Failed due to interval gap: $gap")
-        }
-    }
-    return Quadruple("", false, 0, "Scanning failed")
-}
 
 suspend fun saveUserPreferences(
     context: Context,
