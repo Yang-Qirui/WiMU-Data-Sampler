@@ -187,7 +187,9 @@ class TimerUtils(
                         if (collectWaypoint) {
                             wifiWriter.append("${waypointPosition?.x}, ${waypointPosition?.y}\n")
                         }
-                        wifiWriter.append("$wifiResults\n")
+                        for (result in wifiResults) {
+                            wifiWriter.append(result)
+                        }
                         wifiWriter.flush()
                         wifiWriter.close()
                     } catch (e: IOException) {

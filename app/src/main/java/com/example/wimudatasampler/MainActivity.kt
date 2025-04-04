@@ -158,9 +158,6 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
     private var job = Job()
     private var scope = CoroutineScope(Dispatchers.IO + job)
-    private fun euclideanDistance(x1: Float, y1: Float, x2: Float, y2: Float): Float {
-        return sqrt((x2 - x1).pow(2) + (y2 - y1).pow(2))
-    }
 
     private fun startFetching() {
         var warmupCounter = 0
@@ -430,24 +427,26 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         wifiScanReceiver = object : BroadcastReceiver() {
             @SuppressLint("MissingPermission")
             override fun onReceive(context: Context, intent: Intent) {
-                val receivedTime = System.currentTimeMillis()
-                Log.d("RECEIVED", "Received at ${SystemClock.elapsedRealtime()}")
-                val scanResults = wifiManager.scanResults
-                val bootTime = System.currentTimeMillis() - SystemClock.elapsedRealtime()
-                val resultList = scanResults.map { scanResult ->
-                    "${scanResult.timestamp} ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level}"
-                }
+                val success = intent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED, false)
+                if (success) {
+                    Log.d("RECEIVED", "Received at ${SystemClock.elapsedRealtime()}")
+                    val scanResults = wifiManager.scanResults
+                    val bootTime = System.currentTimeMillis() - SystemClock.elapsedRealtime()
+                    val resultList = scanResults.map { scanResult ->
+                        "${scanResult.timestamp} ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level} \n"
+                    }
 
-                for (result in resultList) {
-                    wifiScanningResults.add(result)
-                    Log.d("RECEIVED_RES", result)
+                    for (result in resultList) {
+                        wifiScanningResults.add(result)
+                        Log.d("RECEIVED_RES", result)
+                    }
                 }
             }
         }
 
         val intentFilter = IntentFilter()
         intentFilter.addAction(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
-        registerReceiver(wifiScanReceiver, intentFilter, RECEIVER_NOT_EXPORTED)
+        registerReceiver(wifiScanReceiver, intentFilter)
 
         timer = TimerUtils(scope, {wifiScanningResults}, {wifiScanningResults.clear()}, { wifiManager.startScan() }, this)
         motionSensorManager = SensorUtils(this)
