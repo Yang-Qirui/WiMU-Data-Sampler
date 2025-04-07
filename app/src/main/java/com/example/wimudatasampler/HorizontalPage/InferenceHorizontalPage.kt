@@ -98,6 +98,8 @@ fun InferenceHorizontalPage(
     imageBitmap: ImageBitmap,
     selectedMap: MapModels.ImageMap
 ) {
+
+    val jDMode = true
     val scope = rememberCoroutineScope()
 
     // Map metadata
@@ -191,6 +193,7 @@ fun InferenceHorizontalPage(
                                 val targetTranslation = canvasCenter - userScreenPos
                                 translation = targetTranslation
                             }
+
                             NavUiMode.USER_POS_FIX_CENTER_DIR_FREE.value -> {
                                 val newScale = (scale * zoom).coerceIn(0.2f, 5f)
                                 scale = newScale
@@ -198,10 +201,11 @@ fun InferenceHorizontalPage(
                                 val targetTranslation = canvasCenter - userScreenPos
                                 translation = targetTranslation
                             }
+
                             else -> { // uiMode == NavUiMode.USER_POS_FREE_CENTER_DIR_FREE.value
                                 val newScale = (scale * zoom).coerceIn(0.2f, 5f)
                                 scale = newScale
-                                translation +=  pan
+                                translation += pan
                                 gestureRotationDegrees += rotate
                             }
                         }
@@ -229,7 +233,7 @@ fun InferenceHorizontalPage(
                 scale(scale, scale, pivot = userScreenPos)
                 rotate(
                     if (uiMode == NavUiMode.USER_POS_FIX_CENTER_DIR_FIX_UP.value
-                    ) (- userHeading + 90) else 0.0f,
+                    ) (-userHeading + 90) else 0.0f,
                     pivot = userScreenPos
                 )
             }) {
@@ -243,6 +247,7 @@ fun InferenceHorizontalPage(
                 if (uiMode == NavUiMode.USER_POS_FIX_CENTER_DIR_FIX_UP.value) {
 
                     drawUserMarker(
+                        jDMode = jDMode,
                         position = userScreenPos,
                         headingDegrees = userHeading,
                         scale = scale,
@@ -252,6 +257,7 @@ fun InferenceHorizontalPage(
 
                 } else {
                     drawUserMarker(
+                        jDMode = jDMode,
                         position = userScreenPos,
                         headingDegrees = userHeading,
                         scale = scale,
@@ -263,6 +269,7 @@ fun InferenceHorizontalPage(
                 waypoints.forEachIndexed { index, waypoint ->
                     val screenPos = (userPosOffsetMeters + waypoint) * pixelsPerMeter
                     drawWaypointMarker(
+                        jDMode = jDMode,
                         position = screenPos,
                         scale = scale,
                         centerColor = onTertiaryContainerColor,
@@ -272,13 +279,17 @@ fun InferenceHorizontalPage(
                     drawContext.canvas.nativeCanvas.apply {
                         val paint = android.graphics.Paint().apply {
                             color = onTertiaryContainerColor.toArgb()
-                            textSize = 140/scale.sp.toPx()
+                            textSize = if (jDMode) {
+                                30 / scale.sp.toPx()
+                            } else {
+                                140 / scale.sp.toPx()
+                            }
                         }
                         val num = index + 1
                         drawText(
                             "$num",
-                            screenPos.x + 20/scale,
-                            screenPos.y+ 20/scale,
+                            screenPos.x + 20 / scale,
+                            screenPos.y + 20 / scale,
                             paint
                         )
                     }
@@ -318,12 +329,13 @@ fun InferenceHorizontalPage(
                 x * sin(rotationAngle) + y * cos(rotationAngle) + userScreenPos.y
             )
             // Convert to metric coordinates
-            return (rotatedPos ) / pixelsPerMeter - userPosOffsetMeters
+            return (rotatedPos) / pixelsPerMeter - userPosOffsetMeters
         }
 
         longPressPosition?.let { screenPos ->
             Canvas(modifier = Modifier.size(24.dp)) {
                 drawWaypointMarker(
+                    jDMode = jDMode,
                     position = screenPos,
                     scale = 1.0f,
                     centerColor = tertiaryContainerColor,
@@ -344,7 +356,8 @@ fun InferenceHorizontalPage(
 
         Box(
             modifier = Modifier
-                .align(Alignment.TopCenter).padding(top = 12.dp)
+                .align(Alignment.TopCenter)
+                .padding(top = 12.dp)
         ) {
             Text(
                 modifier = Modifier
@@ -507,6 +520,7 @@ fun InferenceHorizontalPage(
 
 
 private fun DrawScope.drawUserMarker(
+    jDMode: Boolean,
     position: Offset,
     headingDegrees: Float,
     scale: Float,
@@ -516,11 +530,19 @@ private fun DrawScope.drawUserMarker(
     val centerX = position.x
     val centerY = position.y
     // Radius
-    val innerRadius = 30f/scale
-    val outerRadius = 35f/scale
+    val innerRadius = if (jDMode) {
+        10f / scale
+    } else {
+        30f / scale
+    }
+    val outerRadius = if (jDMode) {
+        12f / scale
+    } else {
+        35f / scale
+    }
     // Draw triangle for direction
     val originAngle = Math.toRadians(120f.toDouble())
-    val directionAngle = Math.toRadians((headingDegrees+180).toDouble())
+    val directionAngle = Math.toRadians((headingDegrees + 180).toDouble())
 
     // Calculate the points of the triangle based on direction
     val triangleHeight = innerRadius / cos(originAngle / 2).toFloat()
@@ -566,16 +588,29 @@ private fun DrawScope.drawUserMarker(
     )
 }
 
-private fun DrawScope.drawWaypointMarker(position: Offset, scale:Float, centerColor: Color,ringColor:Color) {
+private fun DrawScope.drawWaypointMarker(
+    jDMode: Boolean,
+    position: Offset,
+    scale: Float,
+    centerColor: Color, ringColor: Color
+) {
     drawCircle(
         color = ringColor,
         center = position,
-        radius = 40/scale.dp.toPx()
+        radius = if (jDMode) {
+            12 / scale.dp.toPx()
+        } else {
+            40 / scale.dp.toPx()
+        }
     )
     drawCircle(
         color = centerColor,
         center = position,
-        radius = 20/scale.dp.toPx()
+        radius = if (jDMode) {
+            6 / scale.dp.toPx()
+        } else {
+            20 / scale.dp.toPx()
+        }
     )
 }
 

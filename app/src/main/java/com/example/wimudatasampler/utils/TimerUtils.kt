@@ -4,6 +4,7 @@ import android.content.Context
 import android.hardware.SensorManager
 import android.net.wifi.WifiManager
 import android.os.Environment
+import android.os.SystemClock
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -177,11 +178,11 @@ class TimerUtils(
         wifiJob = coroutineScope.launch {
             while (isWifiTaskRunning.get() && isActive) {
                 val invokeSuccess = wifiManagerScanning()
-                Log.d("INVOKE", "$invokeSuccess")
+                Log.d("INVOKE", "[${System.currentTimeMillis()}] $invokeSuccess")
                 try {
                     if (!isWifiTaskRunning.get()) return@launch
                     val wifiResults = getWiFiScanningResultCallback()
-                    wifiScanningInfo = "Success"
+                    wifiScanningInfo = "[${System.currentTimeMillis()}]" + "Success"
                     try {
                         val wifiWriter = FileWriter(wifiFile, false)
                         if (collectWaypoint) {

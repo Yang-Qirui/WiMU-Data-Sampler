@@ -6,46 +6,45 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.hardware.SensorManager
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.annotation.RequiresApi
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.ui.unit.dp
-import android.hardware.SensorManager
-import android.os.SystemClock
-import androidx.compose.foundation.layout.Row
-import androidx.compose.runtime.mutableFloatStateOf
-import android.view.WindowManager
-import androidx.activity.viewModels
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.offset
-import androidx.compose.material3.Card
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.unit.IntOffset
-import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.edit
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -60,11 +59,11 @@ import com.example.wimudatasampler.utils.SensorUtils
 import com.example.wimudatasampler.utils.TimerUtils
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.delay
-import kotlin.math.cos
-import kotlin.math.sin
 import kotlinx.coroutines.*
+import kotlin.math.cos
 import kotlin.math.pow
+import kotlin.math.roundToInt
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 @AndroidEntryPoint
@@ -433,7 +432,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                     val scanResults = wifiManager.scanResults
                     val bootTime = System.currentTimeMillis() - SystemClock.elapsedRealtime()
                     val resultList = scanResults.map { scanResult ->
-                        "${scanResult.timestamp} ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level} \n"
+                        "${(scanResult.timestamp/1000 + bootTime)} ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level} \n"
                     }
 
                     for (result in resultList) {
