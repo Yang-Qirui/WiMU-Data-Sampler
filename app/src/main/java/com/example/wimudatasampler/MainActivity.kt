@@ -431,10 +431,10 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                     Log.d("RECEIVED", "Received at ${SystemClock.elapsedRealtime()}")
                     val scanResults = wifiManager.scanResults
                     val bootTime = System.currentTimeMillis() - SystemClock.elapsedRealtime()
+                    val minScanTime = scanResults.minOf { it.timestamp }
                     val resultList = scanResults.map { scanResult ->
-                        "${(scanResult.timestamp/1000 + bootTime)} ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level} \n"
+                        "${(minScanTime / 1000 + bootTime)} ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level} \n"
                     }
-
                     for (result in resultList) {
                         wifiScanningResults.add(result)
                         Log.d("RECEIVED_RES", result)
