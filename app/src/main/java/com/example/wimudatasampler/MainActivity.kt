@@ -94,7 +94,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var roll by mutableFloatStateOf(0f)
     private var latestWifiScanResults: List<String> by Delegates.observable(emptyList()) { property, oldValue, newValue ->
         if (newValue != oldValue && startInference) {
-            Log.d("New value", newValue.toString())
+//            Log.d("New value", newValue.toString())
             scope.launch {
                 onLatestWifiResultChanged(newValue)
             }

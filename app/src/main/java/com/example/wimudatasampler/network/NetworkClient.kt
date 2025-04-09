@@ -1,8 +1,10 @@
 package com.example.wimudatasampler.network
 
 import android.util.Log
+import android.view.PixelCopy.Request
 import androidx.compose.ui.geometry.Offset
 import com.example.wimudatasampler.DataClass.DataEntry
+import com.example.wimudatasampler.DataClass.RequestData
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.post
@@ -15,7 +17,7 @@ import kotlinx.serialization.json.Json
 object NetworkClient {
     private val client = HttpClient(CIO)
 
-    private fun parseDataEntry(wifiInput: List<String>, imuInput: Offset, sysNoise: Float = 1f, obsNoise: Float = 3f): List<DataEntry> {
+    private fun parseDataEntry(wifiInput: List<String>): List<DataEntry> {
         val wifiEntries = mutableListOf<DataEntry>()
         for (line in wifiInput) {
             val indentLine = line.trimIndent()
@@ -29,7 +31,7 @@ object NetworkClient {
                     val frequency = parts[3].toInt()
                     val rssi = parts[4].toInt()
                     
-                    wifiEntries.add(DataEntry(timestamp, bssid, ssid, frequency, rssi, imuInput.x, imuInput.y, sysNoise, obsNoise))
+                    wifiEntries.add(DataEntry(timestamp, bssid, ssid, frequency, rssi))
                 } catch (e: Exception) {
                     continue
                 }
@@ -38,12 +40,12 @@ object NetworkClient {
         return wifiEntries
     }
 
-    suspend fun fetchData(wifiResult: List<String>, imuInput: Offset): HttpResponse {
-        val wifiEntries = parseDataEntry(wifiResult, imuInput)
-        Log.d("monitor", wifiEntries.toString())
+    suspend fun fetchData(wifiResult: List<String>, imuInput: Offset, sysNoise: Float = 1f, obsNoise: Float = 3f): HttpResponse {
+        val wifiEntries = parseDataEntry(wifiResult)
+        val request = RequestData(wifiEntries, imuInput.x, imuInput.y, sysNoise, obsNoise)
         return client.post("http://limcpu1.cse.ust.hk:7860/wimu/inference") {
             contentType(ContentType.Application.Json)
-            setBody(Json.encodeToString(wifiEntries))
+            setBody(Json.encodeToString(request))
         }
     }
 }
