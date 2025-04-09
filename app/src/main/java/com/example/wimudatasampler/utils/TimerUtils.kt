@@ -181,8 +181,8 @@ class TimerUtils(
                 Log.d("INVOKE", "[${System.currentTimeMillis()}] $invokeSuccess")
                 try {
                     if (!isWifiTaskRunning.get()) return@launch
-                    val wifiResults = getWiFiScanningResultCallback()
-                    wifiScanningInfo = "[${System.currentTimeMillis()}]" + "Success"
+                    val wifiResults = getWiFiScanningResultCallback().toMutableList()
+                    wifiScanningInfo = "${System.currentTimeMillis()} $invokeSuccess"
                     try {
                         val wifiWriter = FileWriter(wifiFile, false)
                         if (collectWaypoint) {

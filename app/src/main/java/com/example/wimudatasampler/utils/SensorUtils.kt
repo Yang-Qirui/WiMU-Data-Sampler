@@ -16,6 +16,8 @@ class SensorUtils(context: Context) : SensorEventListener {
     private var accSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
     private var singleStepSensor: Sensor? =
         sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
+    private var magnetometer: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+    private var gyroscope: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
     private var lastRotationVector: FloatArray? = null
     private var lastStepCount: Float? = null
     private var lastAcc: FloatArray? = null
@@ -27,6 +29,7 @@ class SensorUtils(context: Context) : SensorEventListener {
         fun onStepCountChanged(stepCount: Float)
         fun onAccChanged(acc: FloatArray)
         fun onSingleStepChanged()
+        fun onMagChanged(mag: FloatArray)
     }
 
     private var sensorDataListener: SensorDataListener? = null
@@ -34,43 +37,63 @@ class SensorUtils(context: Context) : SensorEventListener {
     fun startMonitoring(listener: SensorDataListener) {
         this.sensorDataListener = listener
         this.stepTimestamps = mutableListOf()
-        val rotationSuccess = sensorManager.registerListener(
-            this,
-            rotationVectorSensor,
-            SensorManager.SENSOR_DELAY_FASTEST
-        )
-        val stepSuccess = sensorManager.registerListener(
-            this,
-            stepCountSensor,
-            SensorManager.SENSOR_DELAY_FASTEST
-        )
-        val accSuccess =
-            sensorManager.registerListener(this, accSensor, SensorManager.SENSOR_DELAY_FASTEST)
-        val singleStepSuccess = sensorManager.registerListener(
-            this,
-            singleStepSensor,
-            SensorManager.SENSOR_DELAY_FASTEST
-        )
-        val stepLengthSuccess = sensorManager.registerListener(
-            this,
-            accSensor,
-            SensorManager.SENSOR_DELAY_FASTEST
-        )
-
-        if (!rotationSuccess) {
-            Log.e("SensorRegister", "Failed to register rotation vector sensor listener")
+        try {
+            val rotationSuccess = sensorManager.registerListener(
+                this,
+                rotationVectorSensor,
+                SensorManager.SENSOR_DELAY_FASTEST
+            )
+            val stepSuccess = sensorManager.registerListener(
+                this,
+                stepCountSensor,
+                SensorManager.SENSOR_DELAY_FASTEST
+            )
+            val accSuccess =
+                sensorManager.registerListener(this, accSensor, SensorManager.SENSOR_DELAY_FASTEST)
+            val singleStepSuccess = sensorManager.registerListener(
+                this,
+                singleStepSensor,
+                SensorManager.SENSOR_DELAY_FASTEST
+            )
+            val stepLengthSuccess = sensorManager.registerListener(
+                this,
+                accSensor,
+                SensorManager.SENSOR_DELAY_FASTEST
+            )
+            val magSuccess = sensorManager.registerListener(
+                this,
+                magnetometer,
+                SensorManager.SENSOR_DELAY_FASTEST
+            )
+            val gyroSuccess = sensorManager.registerListener(
+                this,
+                gyroscope,
+                SensorManager.SENSOR_DELAY_FASTEST
+            )
+            if (!rotationSuccess) {
+                Log.e("SensorRegister", "Failed to register rotation vector sensor listener")
+            }
+            if (!stepSuccess) {
+                Log.e("SensorRegister", "Failed to register step count sensor listener")
+            }
+            if (!accSuccess) {
+                Log.e("SensorRegister", "Failed to register accelerator sensor listener")
+            }
+            if (!singleStepSuccess) {
+                Log.e("SensorRegister", "Failed to register step detector sensor listener")
+            }
+            if (!stepLengthSuccess) {
+                Log.e("SensorRegister", "Failed to register accelerometer sensor listener")
+            }
+            if (!magSuccess) {
+                Log.e("SensorRegister", "Failed to register magnetometer sensor listener")
+            }
+            if (!gyroSuccess) {
+                Log.e("SensorRegister", "Failed to register gyroscope sensor listener")
+            }
         }
-        if (!stepSuccess) {
-            Log.e("SensorRegister", "Failed to register step count sensor listener")
-        }
-        if (!accSuccess) {
-            Log.e("SensorRegister", "Failed to register accelerator sensor listener")
-        }
-        if (!singleStepSuccess) {
-            Log.e("SensorRegister", "Failed to register step detector sensor listener")
-        }
-        if (!stepLengthSuccess) {
-            Log.e("SensorRegister", "Failed to register accelerometer sensor listener")
+        catch (e: Exception) {
+            Log.d("Register Error", e.printStackTrace().toString())
         }
     }
 
@@ -84,7 +107,6 @@ class SensorUtils(context: Context) : SensorEventListener {
                 lastRotationVector = event.values
                 sensorDataListener?.onRotationVectorChanged(event.values)
             }
-
             Sensor.TYPE_STEP_COUNTER -> {
                 lastStepCount = event.values[0]
                 sensorDataListener?.onStepCountChanged(event.values[0])
@@ -101,6 +123,9 @@ class SensorUtils(context: Context) : SensorEventListener {
                     stepTimestamps.add(ts)
                     sensorDataListener?.onSingleStepChanged()
                 }
+            }
+            Sensor.TYPE_MAGNETIC_FIELD -> {
+                sensorDataListener?.onMagChanged(event.values)
             }
         }
     }

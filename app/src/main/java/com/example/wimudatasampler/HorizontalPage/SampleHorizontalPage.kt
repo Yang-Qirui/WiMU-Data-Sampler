@@ -47,7 +47,10 @@ fun SampleHorizontalPage(
     timer: TimerUtils,
     setStartSamplingTime: (String) -> Unit,
     waypoints: SnapshotStateList<Offset>,
-    estimatedStride: Float
+    estimatedStride: Float,
+    accX: Float,
+    accY: Float,
+    accZ: Float
 ) {
 
     var wifiFreq by remember {
@@ -78,36 +81,12 @@ fun SampleHorizontalPage(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-//            Text("Last Two Scan Interval: ${String.format("%.2f", timer.lastTwoScanInterval / 1_000_000.0)}")
             Text("Estimated Stride: $estimatedStride")
             Spacer(modifier = Modifier.height(16.dp))
-//            Button(onClick = {
-//                if (!isTestingSamplingRate) {
-//                    // 开始任务逻辑
-//                    scope.launch {
-//                        timer.runTestFrequencyTask(
-//                            wifiManager = wifiManager,
-//                            frequency = 3.0f
-//                        )
-//                    }
-//                    isTestingSamplingRate = true  // 切换为正在采样的状态
-//                } else {
-//                    // 停止任务逻辑
-//                    timer.stopTask()
-//                    isTestingSamplingRate = false  // 切换为停止采样状态
-//                }
-//            }, colors = if (isTestingSamplingRate) {
-//                ButtonDefaults.buttonColors(containerColor = Color.Red)
-//            } else {
-//                ButtonDefaults.buttonColors()
-//            }) {
-//                if (isTestingSamplingRate) {
-//                    Text("Start Testing Frequency")
-//                } else {
-//                    Text("End Testing Frequency")
-//                }
-//
-//            }
+            // Display acceleration values
+            Text("Acceleration (m/s²):")
+            Text("X: ${String.format("%.2f", accX)} Y: ${String.format("%.2f", accY)} Z: ${String.format("%.2f", accZ)}")
+            Spacer(modifier = Modifier.height(16.dp))
             Spacer(modifier = Modifier.height(16.dp))
             // Select a waypoint to collect data
             Button(onClick = {

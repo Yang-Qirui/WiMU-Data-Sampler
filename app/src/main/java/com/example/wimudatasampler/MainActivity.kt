@@ -49,22 +49,29 @@ import androidx.datastore.preferences.core.edit
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.wimudatasampler.DataClass.Coordinate
 import com.example.wimudatasampler.Pages.MainScreen
 import com.example.wimudatasampler.Pages.MapChoosingScreen
 import com.example.wimudatasampler.Pages.SettingScreen
 import com.example.wimudatasampler.navigation.MainActivityDestinations
+import com.example.wimudatasampler.network.NetworkClient
 import com.example.wimudatasampler.ui.theme.WiMUTheme
+import com.example.wimudatasampler.utils.CoroutineLockIndexedList
 import com.example.wimudatasampler.utils.KalmanFilter
 import com.example.wimudatasampler.utils.SensorUtils
 import com.example.wimudatasampler.utils.TimerUtils
+import com.example.wimudatasampler.utils.lowPassFilter
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import dagger.hilt.android.AndroidEntryPoint
+import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.*
+import kotlinx.serialization.json.Json
 import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.properties.Delegates
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
@@ -77,21 +84,37 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private lateinit var timer: TimerUtils
     private var startSamplingTime: String = ""
     private var lastRotationVector: FloatArray? = null
+    private var rotationMatrix = FloatArray(9)
     private var lastStepCount: Float? = null
     private var lastAcc: FloatArray? = null
+    private var lastGravity = FloatArray(3)
+    private var lastGeomagnetic = FloatArray(3)
     private var yaw by mutableFloatStateOf(0f)
     private var pitch by mutableFloatStateOf(0f)
     private var roll by mutableFloatStateOf(0f)
+    private var latestWifiScanResults: List<String> by Delegates.observable(emptyList()) { property, oldValue, newValue ->
+        if (newValue != oldValue && startInference) {
+            Log.d("New value", newValue.toString())
+            scope.launch {
+                onLatestWifiResultChanged(newValue)
+            }
+        }
+    }
+    private var startInference by mutableStateOf(false)
     private var isMonitoringAngles by mutableStateOf(false)
     private var showStepCountDialog by mutableStateOf(false)  // 控制弹窗显示状态
     private var stepCount by mutableFloatStateOf(0f)  // 保存步数值
     private var waypoints = mutableStateListOf<Offset>()
     private var wifiOffset by mutableStateOf<Offset?>(null)
     private var imuOffset by mutableStateOf<Offset?>(null)
+    private var imuOffsetHistory = CoroutineLockIndexedList<Offset>()
     private var targetOffset by mutableStateOf(Offset.Zero)
     private var wifiScanningResults = mutableListOf<String>()
     private var navigationStarted by mutableStateOf(false)
     private var loadingStarted by mutableStateOf(false)
+    private var accX by mutableStateOf(0f)
+    private var accY by mutableStateOf(0f)
+    private var accZ by mutableStateOf(0f)
 
     // The initial installation default value of the persistent variable
     private var stride by mutableFloatStateOf(0.4f)
@@ -140,7 +163,24 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
             currentRequestedPermission = nextPermission
             requestPermissionLauncher.launch(nextPermission)
         }
+    }
 
+    private suspend fun onLatestWifiResultChanged(newValue: List<String>) {
+        //TODO
+        val wifiTimestamp = newValue[0].trimIndent().split(" ")[0].toLong()
+        val latestImuOffset = imuOffsetHistory.get(wifiTimestamp)?.second
+        try {
+            if (latestImuOffset != null) {
+                val response = NetworkClient.fetchData(newValue, latestImuOffset)
+                Log.d("response", response.bodyAsText())
+                val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
+                targetOffset = Offset(coordinate.x, coordinate.y)
+            }
+        } catch (e: Exception) {
+            Log.e("Update Exception", e.toString())
+        }
+        imuOffset = Offset(0f, 0f)
+        imuOffsetHistory.clear()
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
@@ -152,16 +192,15 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         Manifest.permission.ACCESS_WIFI_STATE,
         Manifest.permission.CHANGE_WIFI_STATE,
         Manifest.permission.ACTIVITY_RECOGNITION,
-        Manifest.permission.HIGH_SAMPLING_RATE_SENSORS
     )
 
     private var job = Job()
     private var scope = CoroutineScope(Dispatchers.IO + job)
 
     private fun startFetching() {
-        var warmupCounter = 0
         var isInitialLoad = false
-        var isWarmupCompleted = false
+        motionSensorManager.startMonitoring(this)
+        startInference = true
         scope.launch {
             while (true) {
                 val success = wifiManager.startScan()
@@ -171,59 +210,31 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                         loadingStarted = true
                         isInitialLoad = true
                     }
-                    Log.d("Map", "Wifi Scan Results")
-//                    Log.d("BETA", beta.toString())
+//                    Log.d("Map", "Wifi Scan Started")
 //                    try {
-//                        val response = NetworkClient.fetchData(wifiResults)
+//                        val response = NetworkClient.fetchData(latestWifiScanResults)
 //                        Log.d("response", response.bodyAsText())
-//                        var coordinate: Coordinate?
+//                        var coordinate: Coordinate
 //                        try {
 //                            coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
 //                        } catch (e: Exception) {
-//                            delay(5000)
+//                            Log.e("Http exception", e.toString())
+//                            delay(5000) // 短暂延迟后再次检查
 //                            continue
 //                        }
-//                        wifiOffset = Offset(coordinate.x, coordinate.y)
-//
-//                        Log.d("wifiOffset", wifiOffset.toString())
-//                        if (warmupCounter > 2) {
-//                            if (!isWarmupCompleted) {
-//                                navigationStarted = true
-//                                loadingStarted = false
-//                                isWarmupCompleted = true
-//                            }
-//                            if (imuOffset == null) {
-//                                imuOffset = Offset(coordinate.x, coordinate.y)
-//                                filter.setInit(
-//                                    doubleArrayOf(
-//                                        coordinate.x.toDouble(),
-//                                        coordinate.y.toDouble()
-//                                    )
-//                                )
-//                                targetOffset = Offset(coordinate.x, coordinate.y)
-//                            } else if (imuOffset != null) {
-//                                filter.update(
-//                                    doubleArrayOf(
-//                                        coordinate.x.toDouble(),
-//                                        coordinate.y.toDouble()
-//                                    )
-//                                )
-//                                val (finalX, finalY) = filter.getState()
-//                                targetOffset = Offset(finalX.toFloat(), finalY.toFloat())
-//                                imuOffset = Offset(finalX.toFloat(), finalY.toFloat())
-//                            }
-//                        }
-//                        warmupCounter += 1
+//                        targetOffset = Offset(coordinate.x, coordinate.y)
 //                    } catch (e: Exception) {
 //                        Log.e("Http exception", e.toString())
 //                    }
+                    delay(5000)
                 }
-                delay(5000)
             }
         }
     }
 
     private fun endFetching() {
+        motionSensorManager.stopMonitoring()
+        startInference = false
         job.cancel("Fetching stopped")
         job.cancel()
         job = Job()
@@ -366,7 +377,10 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 },
                                 setNavigationStartFalse = { navigationStarted = false },
                                 setLoadingStartFalse = { loadingStarted = false },
-                                estimatedStride = estimatedStrideLength
+                                estimatedStride = estimatedStrideLength,
+                                accX = accX,
+                                accY = accY,
+                                accZ = accZ
                             )
                         }
                         composable(MainActivityDestinations.Settings.route) {
@@ -430,14 +444,21 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                 if (success) {
                     Log.d("RECEIVED", "Received at ${SystemClock.elapsedRealtime()}")
                     val scanResults = wifiManager.scanResults
-                    val bootTime = System.currentTimeMillis() - SystemClock.elapsedRealtime()
-                    val minScanTime = scanResults.minOf { it.timestamp }
-                    val resultList = scanResults.map { scanResult ->
-                        "${(minScanTime / 1000 + bootTime)} ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level} \n"
-                    }
-                    for (result in resultList) {
-                        wifiScanningResults.add(result)
-                        Log.d("RECEIVED_RES", result)
+                    if (scanResults.isNotEmpty()) {
+                        val bootTime = System.currentTimeMillis() - SystemClock.elapsedRealtime()
+                        val minScanTime = scanResults.minOf { it.timestamp }
+                        val maxScanTime = scanResults.maxOf { it.timestamp }
+                        Log.d("Diff", "${maxScanTime - minScanTime}")
+                        val resultList = scanResults.map { scanResult ->
+                            "${(minScanTime / 1000 + bootTime)} ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level}\n"
+                        }
+                        latestWifiScanResults = resultList
+                        for (result in resultList) {
+                            wifiScanningResults.add(result)
+//                            Log.d("RECEIVED_RES", result)
+                        }
+                    } else {
+                        Log.e("RECEIVED", "No Wi-Fi scan results found")
                     }
                 }
             }
@@ -454,7 +475,6 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
     override fun onRotationVectorChanged(rotationVector: FloatArray) {
         lastRotationVector = rotationVector
-        val rotationMatrix = FloatArray(9)
         SensorManager.getRotationMatrixFromVector(rotationMatrix, rotationVector)
         val orientations = FloatArray(3)
         SensorManager.getOrientation(rotationMatrix, orientations)
@@ -464,15 +484,16 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     }
 
     override fun onSingleStepChanged() {
+        // TODO: 进行记录。在start_fetching中根据wifi时间戳进行匹配。可能需要给imuOffset上锁。imuOffset记录从上一次位置到当前位置的位移
         if (imuOffset != null) {
             val x = imuOffset!!.x - stride * cos(
                 Math.toRadians(yaw.toDouble()).toFloat()
             ) // north is negative axis
             val y = imuOffset!!.y - stride * sin(Math.toRadians(yaw.toDouble()).toFloat())
             imuOffset = Offset(x, y)
-            filter.predict(stride, Math.toRadians(yaw.toDouble()).toFloat())
-            val (imuX, imuY) = filter.getState()
-            targetOffset = Offset(imuX.toFloat(), imuY.toFloat())
+            if (startInference){
+                imuOffsetHistory.put(Pair(System.currentTimeMillis(), imuOffset!!))
+            }
         }
     }
 
@@ -482,7 +503,15 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         showStepCountDialog = true  // 显示弹窗
     }
 
+    override fun onMagChanged(mag: FloatArray) {
+        lastGeomagnetic = lowPassFilter(mag.copyOf(), lastGeomagnetic)
+    }
+
     override fun onAccChanged(acc: FloatArray) {
+        lastGravity = lowPassFilter(acc.copyOf(), lastGravity)
+        accX = acc[0]
+        accY = acc[1]
+        accZ = acc[2]
         val acceleration = sqrt(
             acc[0].pow(2) +
                     acc[1].pow(2) +

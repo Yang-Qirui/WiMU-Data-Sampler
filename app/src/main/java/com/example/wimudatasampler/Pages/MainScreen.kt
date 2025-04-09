@@ -93,7 +93,10 @@ fun MainScreen(
     onRefreshButtonClicked: () ->Unit,
     setNavigationStartFalse: () -> Unit,
     setLoadingStartFalse: () -> Unit,
-    estimatedStride: Float
+    estimatedStride: Float,
+    accX: Float,
+    accY: Float,
+    accZ: Float
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -219,7 +222,10 @@ fun MainScreen(
                 onRefreshButtonClicked = onRefreshButtonClicked,
                 setNavigationStartFalse = setNavigationStartFalse,
                 setLoadingStartFalse = setLoadingStartFalse,
-                estimatedStride = estimatedStride
+                estimatedStride = estimatedStride,
+                accX = accX,
+                accY = accY,
+                accZ = accZ
             )
         }
     }
@@ -257,7 +263,10 @@ fun AppHorizontalPager(
     onRefreshButtonClicked: () ->Unit,
     setNavigationStartFalse: () -> Unit,
     setLoadingStartFalse: () -> Unit,
-    estimatedStride: Float
+    estimatedStride: Float,
+    accX: Float,
+    accY: Float,
+    accZ: Float
 ) {
     LaunchedEffect(state) {
         pagerState.scrollToPage(state)
@@ -285,7 +294,10 @@ fun AppHorizontalPager(
                     timer = timer,
                     setStartSamplingTime = setStartSamplingTime,
                     waypoints = waypoints,
-                    estimatedStride = estimatedStride
+                    estimatedStride = estimatedStride,
+                    accX = accX,
+                    accY = accY,
+                    accZ = accZ
                 )
             }
 
@@ -329,7 +341,7 @@ fun AppHorizontalPager(
                                 targetOffset = targetOffset,
                                 onRefreshButtonClicked = onRefreshButtonClicked,
                                 setNavigationStartFalse = setNavigationStartFalse,
-                                setLoadingStartFalse = setLoadingStartFalse
+                                setLoadingStartFalse = setLoadingStartFalse,
                             )
                         } ?: ImageBitmap.imageResource(R.drawable.image_placeholder)
                     } else {
