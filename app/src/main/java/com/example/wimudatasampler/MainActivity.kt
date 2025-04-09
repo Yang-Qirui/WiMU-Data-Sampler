@@ -198,7 +198,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var scope = CoroutineScope(Dispatchers.IO + job)
 
     private fun startFetching() {
-        var isInitialLoad = false
+        loadingStarted = true
         motionSensorManager.startMonitoring(this)
         startInference = true
         scope.launch {
@@ -206,10 +206,8 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                 val success = wifiManager.startScan()
                 // TODO: Support the newest wifi scanning logic
                 if (success) {
-                    if (!isInitialLoad) {
-                        loadingStarted = true
-                        isInitialLoad = true
-                    }
+                    loadingStarted = false
+                    navigationStarted = true
 //                    Log.d("Map", "Wifi Scan Started")
 //                    try {
 //                        val response = NetworkClient.fetchData(latestWifiScanResults)
