@@ -175,6 +175,11 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                 Log.d("response", response.bodyAsText())
                 val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
                 targetOffset = Offset(coordinate.x, coordinate.y)
+            } else {
+                val response = NetworkClient.reset(newValue)
+                Log.d("response", response.bodyAsText())
+                val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
+                targetOffset = Offset(coordinate.x, coordinate.y)
             }
         } catch (e: Exception) {
             Log.e("Update Exception", e.toString())
@@ -208,22 +213,6 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                 if (success) {
                     loadingStarted = false
                     navigationStarted = true
-//                    Log.d("Map", "Wifi Scan Started")
-//                    try {
-//                        val response = NetworkClient.fetchData(latestWifiScanResults)
-//                        Log.d("response", response.bodyAsText())
-//                        var coordinate: Coordinate
-//                        try {
-//                            coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
-//                        } catch (e: Exception) {
-//                            Log.e("Http exception", e.toString())
-//                            delay(5000) // 短暂延迟后再次检查
-//                            continue
-//                        }
-//                        targetOffset = Offset(coordinate.x, coordinate.y)
-//                    } catch (e: Exception) {
-//                        Log.e("Http exception", e.toString())
-//                    }
                     delay(5000)
                 }
             }
@@ -232,9 +221,10 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
     private fun endFetching() {
         motionSensorManager.stopMonitoring()
+        imuOffset = null
+        imuOffsetHistory.clear()
         startInference = false
         job.cancel("Fetching stopped")
-        job.cancel()
         job = Job()
         scope = CoroutineScope(Dispatchers.IO + job)
     }

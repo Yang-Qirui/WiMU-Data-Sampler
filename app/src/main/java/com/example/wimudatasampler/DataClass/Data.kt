@@ -15,8 +15,8 @@ data class DataEntry(
 @Serializable
 data class RequestData(
     val wifiEntries: List<DataEntry>,
-    val dx: Float,
-    val dy: Float,
+    val dx: Float?,
+    val dy: Float?,
     val system_noise_scale: Float,
     val obs_noise_scale: Float
 )

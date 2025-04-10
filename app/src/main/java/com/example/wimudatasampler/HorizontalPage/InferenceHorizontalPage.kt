@@ -368,7 +368,7 @@ fun InferenceHorizontalPage(
                     .padding(vertical = 4.dp, horizontal = 8.dp),
                 text = when {
                     !navigationStarted -> "Ready to go"
-                    else -> "yaw ${userHeading.roundToInt()}, ${imuOffset?.x?.roundToInt()}, ${imuOffset?.y?.roundToInt()}, ${wifiOffset?.x?.roundToInt()}, ${wifiOffset?.y?.roundToInt()}, ${targetOffset?.x?.roundToInt()}, ${targetOffset?.y?.roundToInt()}"
+                    else -> "yaw ${userHeading.roundToInt()}, ${imuOffset?.x?.roundToInt()}, ${imuOffset?.y?.roundToInt()}, ${targetOffset?.x?.roundToInt()}, ${targetOffset?.y?.roundToInt()}"
                 },
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )

@@ -48,4 +48,13 @@ object NetworkClient {
             setBody(Json.encodeToString(request))
         }
     }
+
+    suspend fun reset(wifiResult: List<String>, sysNoise: Float = 1f, obsNoise: Float = 3f): HttpResponse {
+        val wifiEntries = parseDataEntry(wifiResult)
+        val request = RequestData(wifiEntries, null, null, sysNoise, obsNoise)
+        return client.post("http://limcpu1.cse.ust.hk:7860/wimu/reset") {
+            contentType(ContentType.Application.Json)
+            setBody(Json.encodeToString(request))
+        }
+    }
 }
