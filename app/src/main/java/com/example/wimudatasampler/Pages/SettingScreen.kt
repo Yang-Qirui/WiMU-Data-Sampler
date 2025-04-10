@@ -43,12 +43,14 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.coroutineScope
 import androidx.navigation.NavController
 import com.example.wimudatasampler.R
+import com.example.wimudatasampler.UserPreferencesKeys
+import com.example.wimudatasampler.dataStore
 import com.example.wimudatasampler.navigation.MainActivityDestinations
-import com.example.wimudatasampler.saveUserPreferences
 import kotlinx.coroutines.launch
 import kotlin.math.pow
 
@@ -67,6 +69,8 @@ fun SettingScreen(
     matrixR: Array<DoubleArray>,
     matrixRPowOne: Int,
     matrixRPowTwo: Int,
+    sysNoise: Float,
+    obsNoise: Float,
     updateStride: (Float) ->Unit,
     updateBeta: (Float) ->Unit,
     updateInitialState: (DoubleArray) -> Unit,
@@ -76,6 +80,8 @@ fun SettingScreen(
     updateMatrixRPowOne: (Int) ->Unit,
     updateMatrixRPowTwo: (Int) ->Unit,
     updateFullMatrixR: (Array<DoubleArray>) -> Unit,
+    updateSysNoise: (Float) -> Unit,
+    updateObsNoise: (Float) -> Unit
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -155,6 +161,8 @@ fun SettingScreen(
         var curMatrixR4 by remember { mutableStateOf(matrixR[1][1].toString()) }
         var curMatrixRPowOne by remember { mutableStateOf(matrixRPowOne.toString()) }
         var curMatrixRPowTwo by remember { mutableStateOf(matrixRPowTwo.toString()) }
+        var curSysNoise by remember { mutableStateOf(sysNoise.toString()) }
+        var curObsNoise by remember { mutableStateOf(obsNoise.toString()) }
 
         Column(
             modifier = Modifier
@@ -554,6 +562,74 @@ fun SettingScreen(
                 }
             }
 
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                thickness = 1.dp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Row(Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(8.dp)
+                ) {
+                    Text(
+                        text = "sys noise",
+                        style = TextStyle(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        ),
+                        fontFamily = styleScriptFamily,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 4.dp)
+                    )
+                    OutlinedTextField(
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Decimal,
+                            imeAction = ImeAction.Done
+                        ),
+                        value = curSysNoise,
+                        onValueChange = { value ->
+                            curSysNoise = value
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("") }
+                    )
+                }
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(8.dp)
+                ) {
+                    Text(
+                        text = "obs noise",
+                        style = TextStyle(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        ),
+                        fontFamily = styleScriptFamily,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 4.dp)
+                    )
+                    OutlinedTextField(
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Decimal,
+                            imeAction = ImeAction.Done
+                        ),
+                        value = curObsNoise,
+                        onValueChange = { value ->
+                            curObsNoise = value
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("") }
+                    )
+                }
+            }
+
             val lifecycle = LocalLifecycleOwner.current.lifecycle
             val lifecycleScope = remember { lifecycle.coroutineScope }
 
@@ -614,7 +690,9 @@ fun SettingScreen(
                                 matrixQ = tempCurMatrixQ,
                                 matrixR = tempCurMatrixR,
                                 matrixRPowOne = curMatrixRPowOne.toIntOrNull()?:matrixRPowOne,
-                                matrixRPowTwo = curMatrixRPowTwo.toIntOrNull()?:matrixRPowTwo
+                                matrixRPowTwo = curMatrixRPowTwo.toIntOrNull()?:matrixRPowTwo,
+                                sysNoise = curSysNoise.toFloatOrNull()?:sysNoise,
+                                obsNoise = curObsNoise.toFloatOrNull()?:obsNoise,
                             )
                             updateStride(curStride.toFloatOrNull()?:stride)
                             updateBeta(curBeta.toFloatOrNull()?:beta)
@@ -625,6 +703,8 @@ fun SettingScreen(
                             updateMatrixRPowOne(curMatrixRPowOne.toIntOrNull()?:matrixRPowOne)
                             updateMatrixRPowTwo(curMatrixRPowTwo.toIntOrNull()?:matrixRPowTwo)
                             updateFullMatrixR(tempFullCurMatrixR)
+                            updateSysNoise(curSysNoise.toFloatOrNull()?:sysNoise)
+                            updateObsNoise(curObsNoise.toFloatOrNull()?:obsNoise)
                         } catch (e: Exception) {
                             Log.e("SAVE","Save failed: ${e.message}")
                         }
@@ -648,10 +728,56 @@ fun SettingScreen(
                         matrixR[1][0] != curMatrixR3.toDoubleOrNull() ||
                         matrixR[1][1] != curMatrixR4.toDoubleOrNull() ||
                         matrixRPowOne != curMatrixRPowOne.toIntOrNull() ||
-                        matrixRPowTwo != curMatrixRPowTwo.toIntOrNull())
+                        matrixRPowTwo != curMatrixRPowTwo.toIntOrNull() ||
+                        sysNoise != curSysNoise.toFloatOrNull() ||
+                        obsNoise != curObsNoise.toFloatOrNull())
             ) {
                 Text("SAVE")
             }
         }
+    }
+}
+
+suspend fun saveUserPreferences(
+    context: Context,
+    stride: Float,
+    beta: Float,
+    initialState: DoubleArray,
+    initialCovariance: Array<DoubleArray>,
+    matrixQ: Array<DoubleArray>,
+    matrixR: Array<DoubleArray>,
+    matrixRPowOne: Int,
+    matrixRPowTwo: Int,
+    sysNoise: Float,
+    obsNoise: Float
+) {
+    context.dataStore.edit { preferences ->
+        preferences[UserPreferencesKeys.STRIDE] = stride
+
+        preferences[UserPreferencesKeys.BETA] = beta
+
+        preferences[UserPreferencesKeys.INITIAL_STATE_1] = initialState[0]
+        preferences[UserPreferencesKeys.INITIAL_STATE_2] = initialState[1]
+
+        preferences[UserPreferencesKeys.INITIAL_COVARIANCE_1] = initialCovariance[0][0]
+        preferences[UserPreferencesKeys.INITIAL_COVARIANCE_2] = initialCovariance[0][1]
+        preferences[UserPreferencesKeys.INITIAL_COVARIANCE_3] = initialCovariance[1][0]
+        preferences[UserPreferencesKeys.INITIAL_COVARIANCE_4] = initialCovariance[1][1]
+
+        preferences[UserPreferencesKeys.MATRIX_Q_1] = matrixQ[0][0]
+        preferences[UserPreferencesKeys.MATRIX_Q_2] = matrixQ[0][1]
+        preferences[UserPreferencesKeys.MATRIX_Q_3] = matrixQ[1][0]
+        preferences[UserPreferencesKeys.MATRIX_Q_4] = matrixQ[1][1]
+
+        preferences[UserPreferencesKeys.MATRIX_R_1] = matrixR[0][0]
+        preferences[UserPreferencesKeys.MATRIX_R_2] = matrixR[0][1]
+        preferences[UserPreferencesKeys.MATRIX_R_3] = matrixR[1][0]
+        preferences[UserPreferencesKeys.MATRIX_R_4] = matrixR[1][1]
+
+        preferences[UserPreferencesKeys.MATRIX_R_POW_1] = matrixRPowOne
+        preferences[UserPreferencesKeys.MATRIX_R_POW_2] = matrixRPowTwo
+
+        preferences[UserPreferencesKeys.SYS_NOISE] = sysNoise
+        preferences[UserPreferencesKeys.OBS_NOISE] = obsNoise
     }
 }

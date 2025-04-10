@@ -40,7 +40,7 @@ object NetworkClient {
         return wifiEntries
     }
 
-    suspend fun fetchData(wifiResult: List<String>, imuInput: Offset, sysNoise: Float = 1f, obsNoise: Float = 3f): HttpResponse {
+    suspend fun fetchData(wifiResult: List<String>, imuInput: Offset, sysNoise: Float, obsNoise: Float): HttpResponse {
         val wifiEntries = parseDataEntry(wifiResult)
         val request = RequestData(wifiEntries, imuInput.x, imuInput.y, sysNoise, obsNoise)
         return client.post("http://limcpu1.cse.ust.hk:7860/wimu/inference") {
@@ -49,7 +49,7 @@ object NetworkClient {
         }
     }
 
-    suspend fun reset(wifiResult: List<String>, sysNoise: Float = 1f, obsNoise: Float = 3f): HttpResponse {
+    suspend fun reset(wifiResult: List<String>, sysNoise: Float, obsNoise: Float): HttpResponse {
         val wifiEntries = parseDataEntry(wifiResult)
         val request = RequestData(wifiEntries, null, null, sysNoise, obsNoise)
         return client.post("http://limcpu1.cse.ust.hk:7860/wimu/reset") {

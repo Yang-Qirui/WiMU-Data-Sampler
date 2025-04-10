@@ -29,4 +29,7 @@ object UserPreferencesKeys {
 
     val MATRIX_R_POW_1 = intPreferencesKey("matrix_r_pow_1")
     val MATRIX_R_POW_2 = intPreferencesKey("matrix_r_pow_2")
+
+    val SYS_NOISE = floatPreferencesKey("sys_noise")
+    val OBS_NOISE = floatPreferencesKey("bos_noise")
 }
