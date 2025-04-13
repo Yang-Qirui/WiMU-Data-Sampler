@@ -126,23 +126,26 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         doubleArrayOf(5.0, 0.0),
         doubleArrayOf(0.0, 1.0)
     )
-    var matrixQ = arrayOf(      // Process noise (prediction error)
+    private var matrixQ = arrayOf(      // Process noise (prediction error)
         doubleArrayOf(0.05, 0.0),
         doubleArrayOf(0.0, 0.05)
     )
-    var matrixR = arrayOf(
+    private var matrixR = arrayOf(
         doubleArrayOf(4.65, 0.0),
         doubleArrayOf(0.0, 1.75)
     )
-    var matrixRPowOne = 2
-    var matrixRPowTwo = 2
-    var fullMatrixR = arrayOf(      // Observed noise
+    private var matrixRPowOne = 2
+    private var matrixRPowTwo = 2
+    private var fullMatrixR = arrayOf(      // Observed noise
         doubleArrayOf(matrixR[0][0].pow(matrixRPowOne), matrixR[0][1]),
         doubleArrayOf(matrixR[1][0], matrixR[1][1].pow(matrixRPowTwo))
     )
     private val userHeight = 1.7f
     private val strideCoefficient = 0.414f
     private var estimatedStrideLength by mutableFloatStateOf(0f)
+
+    private var sysNoise = 1f
+    private var obsNoise = 3f
     // The initial installation default value of the persistent variable
 
     private val filter = KalmanFilter(initialState, initialCovariance, matrixQ, fullMatrixR)
@@ -173,12 +176,12 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         val latestImuOffset = imuOffsetHistory.get(wifiTimestamp)?.second
         try {
             if (latestImuOffset != null) {
-                val response = NetworkClient.fetchData(newValue, latestImuOffset)
+                val response = NetworkClient.fetchData(newValue, latestImuOffset, sysNoise, obsNoise)
                 Log.d("response", response.bodyAsText())
                 val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
                 targetOffset = Offset(coordinate.x, coordinate.y)
             } else {
-                val response = NetworkClient.reset(newValue)
+                val response = NetworkClient.reset(newValue, sysNoise, obsNoise)
                 Log.d("response", response.bodyAsText())
                 val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
                 targetOffset = Offset(coordinate.x, coordinate.y)
@@ -323,6 +326,9 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                             doubleArrayOf(matrixR[0][0].pow(matrixRPowOne), matrixR[0][1]),
                             doubleArrayOf(matrixR[1][0], matrixR[1][1].pow(matrixRPowTwo))
                         )
+
+                        sysNoise = preferences[UserPreferencesKeys.SYS_NOISE] ?: sysNoise
+                        obsNoise = preferences[UserPreferencesKeys.OBS_NOISE] ?: obsNoise
                     }
                 }
 
@@ -388,6 +394,8 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 matrixR = matrixR,
                                 matrixRPowOne = matrixRPowOne,
                                 matrixRPowTwo = matrixRPowTwo,
+                                sysNoise = sysNoise,
+                                obsNoise = obsNoise,
                                 updateStride = { newStride ->
                                     stride = newStride
                                 },
@@ -415,6 +423,12 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 updateFullMatrixR = { newFullMatrixR  ->
                                     fullMatrixR = newFullMatrixR
                                 },
+                                updateSysNoise = { newSysNoise ->
+                                    sysNoise = newSysNoise
+                                },
+                                updateObsNoise = { newObsNoise ->
+                                    obsNoise = newObsNoise
+                                }
                             )
                         }
                         composable(MainActivityDestinations.MapChoosing.route) {
@@ -565,46 +579,6 @@ fun FilledCardExample(
                 }
             }
         }
-    }
-}
-
-
-suspend fun saveUserPreferences(
-    context: Context,
-    stride: Float,
-    beta: Float,
-    initialState: DoubleArray,
-    initialCovariance: Array<DoubleArray>,
-    matrixQ: Array<DoubleArray>,
-    matrixR: Array<DoubleArray>,
-    matrixRPowOne: Int,
-    matrixRPowTwo: Int
-) {
-    context.dataStore.edit { preferences ->
-        preferences[UserPreferencesKeys.STRIDE] = stride
-
-        preferences[UserPreferencesKeys.BETA] = beta
-
-        preferences[UserPreferencesKeys.INITIAL_STATE_1] = initialState[0]
-        preferences[UserPreferencesKeys.INITIAL_STATE_2] = initialState[1]
-
-        preferences[UserPreferencesKeys.INITIAL_COVARIANCE_1] = initialCovariance[0][0]
-        preferences[UserPreferencesKeys.INITIAL_COVARIANCE_2] = initialCovariance[0][1]
-        preferences[UserPreferencesKeys.INITIAL_COVARIANCE_3] = initialCovariance[1][0]
-        preferences[UserPreferencesKeys.INITIAL_COVARIANCE_4] = initialCovariance[1][1]
-
-        preferences[UserPreferencesKeys.MATRIX_Q_1] = matrixQ[0][0]
-        preferences[UserPreferencesKeys.MATRIX_Q_2] = matrixQ[0][1]
-        preferences[UserPreferencesKeys.MATRIX_Q_3] = matrixQ[1][0]
-        preferences[UserPreferencesKeys.MATRIX_Q_4] = matrixQ[1][1]
-
-        preferences[UserPreferencesKeys.MATRIX_R_1] = matrixR[0][0]
-        preferences[UserPreferencesKeys.MATRIX_R_2] = matrixR[0][1]
-        preferences[UserPreferencesKeys.MATRIX_R_3] = matrixR[1][0]
-        preferences[UserPreferencesKeys.MATRIX_R_4] = matrixR[1][1]
-
-        preferences[UserPreferencesKeys.MATRIX_R_POW_1] = matrixRPowOne
-        preferences[UserPreferencesKeys.MATRIX_R_POW_2] = matrixRPowTwo
     }
 }
 
