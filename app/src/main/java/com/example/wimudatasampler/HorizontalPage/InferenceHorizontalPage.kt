@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.DoDisturb
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Navigation
 import androidx.compose.material.icons.outlined.Refresh
@@ -83,6 +85,7 @@ fun InferenceHorizontalPage(
     context: Context,
     navigationStarted: Boolean,
     loadingStarted: Boolean,
+    enableImu: Boolean,
     startFetching: () -> Unit,
     endFetching: () -> Unit,
     userPositionMeters: Offset?, // User's physical location (in meters)
@@ -95,6 +98,7 @@ fun InferenceHorizontalPage(
     onRefreshButtonClicked: () -> Unit,
     setNavigationStartFalse: () -> Unit,
     setLoadingStartFalse: () -> Unit,
+    setEnableImu: (Boolean) -> Unit,
     imageBitmap: ImageBitmap,
     selectedMap: MapModels.ImageMap
 ) {
@@ -385,6 +389,27 @@ fun InferenceHorizontalPage(
                 contentDescription = "Choose UI display method",
                 tint = MaterialTheme.colorScheme.primary
             )
+        }
+
+        if (navigationStarted && !loadingStarted) {
+            FloatingActionButton(
+                modifier = Modifier
+                    .padding(25.dp)
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 160.dp),
+                containerColor = if (enableImu) colorResource(id = R.color.button_container_green)  else MaterialTheme.colorScheme.errorContainer,
+                onClick = {
+                    // TODO: Disable/Enable IMU
+                    setEnableImu(!enableImu)
+                }
+            ) {
+
+                Icon(
+                    imageVector = if (enableImu) Icons.Outlined.Check else Icons.Outlined.DoDisturb,
+                    contentDescription = "Refresh",
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
         }
 
         if (navigationStarted && !loadingStarted) {

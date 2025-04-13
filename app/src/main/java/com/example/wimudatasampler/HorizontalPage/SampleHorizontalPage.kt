@@ -50,7 +50,8 @@ fun SampleHorizontalPage(
     estimatedStride: Float,
     accX: Float,
     accY: Float,
-    accZ: Float
+    accZ: Float,
+    stepFromMyDetector: Float
 ) {
 
     var wifiFreq by remember {
@@ -85,7 +86,7 @@ fun SampleHorizontalPage(
             Spacer(modifier = Modifier.height(16.dp))
             // Display acceleration values
             Text("Acceleration (m/s²):")
-            Text("X: ${String.format("%.2f", accX)} Y: ${String.format("%.2f", accY)} Z: ${String.format("%.2f", accZ)}")
+            Text("X: ${String.format("%.2f", accX)} Y: ${String.format("%.2f", accY)} Z: ${String.format("%.2f", accZ)} Step: ${stepFromMyDetector}")
             Spacer(modifier = Modifier.height(16.dp))
             Spacer(modifier = Modifier.height(16.dp))
             // Select a waypoint to collect data

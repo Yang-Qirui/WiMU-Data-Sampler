@@ -1,5 +1,6 @@
 package com.example.wimudatasampler.utils
 
+import MyStepDetector
 import android.content.Context
 import android.hardware.Sensor
 import android.hardware.SensorEvent
@@ -17,7 +18,9 @@ class SensorUtils(context: Context) : SensorEventListener {
     private var singleStepSensor: Sensor? =
         sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
     private var magnetometer: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
-    private var gyroscope: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
+    private var gyroscope: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+    private var myStepDetector = MyStepDetector()
+
     private var lastRotationVector: FloatArray? = null
     private var lastStepCount: Float? = null
     private var lastAcc: FloatArray? = null
@@ -30,6 +33,7 @@ class SensorUtils(context: Context) : SensorEventListener {
         fun onAccChanged(acc: FloatArray)
         fun onSingleStepChanged()
         fun onMagChanged(mag: FloatArray)
+        fun onMyStepChanged()
     }
 
     private var sensorDataListener: SensorDataListener? = null
@@ -70,6 +74,8 @@ class SensorUtils(context: Context) : SensorEventListener {
                 gyroscope,
                 SensorManager.SENSOR_DELAY_FASTEST
             )
+            // Register my step detector
+            myStepDetector.registerListener(listener)
             if (!rotationSuccess) {
                 Log.e("SensorRegister", "Failed to register rotation vector sensor listener")
             }
@@ -115,6 +121,7 @@ class SensorUtils(context: Context) : SensorEventListener {
             Sensor.TYPE_ACCELEROMETER -> {
                 lastAcc = event.values
                 sensorDataListener?.onAccChanged(event.values)
+                myStepDetector.onSensorChanged(event)
             }
             Sensor.TYPE_STEP_DETECTOR -> {
                 if (event.values[0] == 1.0f) {

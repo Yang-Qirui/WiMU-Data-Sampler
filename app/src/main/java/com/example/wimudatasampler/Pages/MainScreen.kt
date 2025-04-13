@@ -86,6 +86,7 @@ fun MainScreen(
     targetOffset: Offset?,
     navigationStarted: Boolean,
     loadingStarted: Boolean,
+    enableImu: Boolean,
     startFetching: () -> Unit,
     endFetching: () -> Unit,
     imuOffset: Offset?,
@@ -93,10 +94,12 @@ fun MainScreen(
     onRefreshButtonClicked: () ->Unit,
     setNavigationStartFalse: () -> Unit,
     setLoadingStartFalse: () -> Unit,
+    setEnableImu: (Boolean) -> Unit,
     estimatedStride: Float,
     accX: Float,
     accY: Float,
-    accZ: Float
+    accZ: Float,
+    stepFromMyDetector: Float
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -219,13 +222,16 @@ fun MainScreen(
                 wifiOffset = wifiOffset,
                 navigationStarted = navigationStarted,
                 loadingStarted = loadingStarted,
+                enableImu = enableImu,
                 onRefreshButtonClicked = onRefreshButtonClicked,
                 setNavigationStartFalse = setNavigationStartFalse,
                 setLoadingStartFalse = setLoadingStartFalse,
+                setEnableImu = setEnableImu,
                 estimatedStride = estimatedStride,
                 accX = accX,
                 accY = accY,
-                accZ = accZ
+                accZ = accZ,
+                stepFromMyDetector = stepFromMyDetector
             )
         }
     }
@@ -256,6 +262,7 @@ fun AppHorizontalPager(
     targetOffset: Offset?,
     navigationStarted: Boolean,
     loadingStarted: Boolean,
+    enableImu: Boolean,
     startFetching: () -> Unit,
     endFetching: () -> Unit,
     imuOffset: Offset?,
@@ -263,10 +270,12 @@ fun AppHorizontalPager(
     onRefreshButtonClicked: () ->Unit,
     setNavigationStartFalse: () -> Unit,
     setLoadingStartFalse: () -> Unit,
+    setEnableImu: (Boolean) -> Unit,
     estimatedStride: Float,
     accX: Float,
     accY: Float,
-    accZ: Float
+    accZ: Float,
+    stepFromMyDetector: Float
 ) {
     LaunchedEffect(state) {
         pagerState.scrollToPage(state)
@@ -297,7 +306,8 @@ fun AppHorizontalPager(
                     estimatedStride = estimatedStride,
                     accX = accX,
                     accY = accY,
-                    accZ = accZ
+                    accZ = accZ,
+                    stepFromMyDetector = stepFromMyDetector
                 )
             }
 
@@ -331,6 +341,7 @@ fun AppHorizontalPager(
                                 imageBitmap = bitmap,
                                 navigationStarted = navigationStarted,
                                 loadingStarted = loadingStarted,
+                                enableImu = enableImu,
                                 startFetching = startFetching,
                                 endFetching = endFetching,
                                 userPositionMeters = targetOffset,
@@ -342,6 +353,7 @@ fun AppHorizontalPager(
                                 onRefreshButtonClicked = onRefreshButtonClicked,
                                 setNavigationStartFalse = setNavigationStartFalse,
                                 setLoadingStartFalse = setLoadingStartFalse,
+                                setEnableImu = setEnableImu,
                             )
                         } ?: ImageBitmap.imageResource(R.drawable.image_placeholder)
                     } else {

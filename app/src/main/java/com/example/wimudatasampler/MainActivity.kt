@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var lastRotationVector: FloatArray? = null
     private var rotationMatrix = FloatArray(9)
     private var lastStepCount: Float? = null
+    private var lastStepCountFromMyStepDetector by mutableFloatStateOf(0f)
     private var lastAcc: FloatArray? = null
     private var lastGravity = FloatArray(3)
     private var lastGeomagnetic = FloatArray(3)
@@ -112,6 +113,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var wifiScanningResults = mutableListOf<String>()
     private var navigationStarted by mutableStateOf(false)
     private var loadingStarted by mutableStateOf(false)
+    private var enableImu by mutableStateOf(true)
     private var accX by mutableStateOf(0f)
     private var accY by mutableStateOf(0f)
     private var accZ by mutableStateOf(0f)
@@ -358,6 +360,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 wifiOffset = wifiOffset,
                                 navigationStarted = navigationStarted,
                                 loadingStarted = loadingStarted,
+                                enableImu = enableImu,
                                 onRefreshButtonClicked = {
                                     if (wifiOffset != null) {
                                         targetOffset = wifiOffset!!
@@ -365,10 +368,12 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 },
                                 setNavigationStartFalse = { navigationStarted = false },
                                 setLoadingStartFalse = { loadingStarted = false },
+                                setEnableImu = { newValue -> enableImu = newValue},
                                 estimatedStride = estimatedStrideLength,
                                 accX = accX,
                                 accY = accY,
-                                accZ = accZ
+                                accZ = accZ,
+                                stepFromMyDetector = lastStepCountFromMyStepDetector,
                             )
                         }
                         composable(MainActivityDestinations.Settings.route) {
@@ -513,6 +518,10 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                 estimatedStrideLength = userHeight * strideCoefficient
             }
         }
+    }
+
+    override fun onMyStepChanged() {
+        lastStepCountFromMyStepDetector += 1
     }
 
     private fun toggleAngleMonitoring() {
