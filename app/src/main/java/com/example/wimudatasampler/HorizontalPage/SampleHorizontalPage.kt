@@ -2,6 +2,7 @@ package com.example.wimudatasampler.HorizontalPage
 
 import android.annotation.SuppressLint
 import android.net.wifi.WifiManager
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,7 +52,11 @@ fun SampleHorizontalPage(
     accX: Float,
     accY: Float,
     accZ: Float,
-    stepFromMyDetector: Float
+    stepFromMyDetector: Float,
+    yaw: Float,
+    pitch: Float,
+    roll: Float,
+    orientation: Float
 ) {
 
     var wifiFreq by remember {
@@ -85,8 +90,9 @@ fun SampleHorizontalPage(
             Text("Estimated Stride: $estimatedStride")
             Spacer(modifier = Modifier.height(16.dp))
             // Display acceleration values
-            Text("Acceleration (m/s²):")
-            Text("X: ${String.format("%.2f", accX)} Y: ${String.format("%.2f", accY)} Z: ${String.format("%.2f", accZ)} Step: ${stepFromMyDetector}")
+            Text("X: ${accX.toInt()} Y: ${accY.toInt()} Z: ${accZ.toInt()} Step: $stepFromMyDetector")
+            Text("yaw: ${yaw.toInt()} pitch: ${pitch.toInt()} roll: ${roll.toInt()}")
+            Text("orientation: ${orientation.toInt()}")
             Spacer(modifier = Modifier.height(16.dp))
             Spacer(modifier = Modifier.height(16.dp))
             // Select a waypoint to collect data

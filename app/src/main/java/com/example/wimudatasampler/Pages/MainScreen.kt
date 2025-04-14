@@ -1,5 +1,6 @@
 package com.example.wimudatasampler.Pages
 
+import MyStepDetector
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -78,6 +79,7 @@ fun MainScreen(
     yaw: Float,
     pitch: Float,
     roll: Float,
+    orientation: Float,
     isMonitoringAngles: Boolean,
     toggleMonitoringAngles: () -> Unit,
     waypoints: SnapshotStateList<Offset>,
@@ -99,7 +101,9 @@ fun MainScreen(
     accX: Float,
     accY: Float,
     accZ: Float,
-    stepFromMyDetector: Float
+    stepFromMyDetector: Float,
+    setEnableMyStepDetector: (Boolean) -> Unit,
+    enableMyStepDetector: Boolean
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -210,6 +214,7 @@ fun MainScreen(
                 yaw = yaw,
                 pitch = pitch,
                 roll = roll,
+                orientation = orientation,
                 isMonitoringAngles = isMonitoringAngles,
                 toggleMonitoringAngles = toggleMonitoringAngles,
                 waypoints = waypoints,
@@ -231,7 +236,9 @@ fun MainScreen(
                 accX = accX,
                 accY = accY,
                 accZ = accZ,
-                stepFromMyDetector = stepFromMyDetector
+                stepFromMyDetector = stepFromMyDetector,
+                setEnableMyStepDetector = setEnableMyStepDetector,
+                enableMyStepDetector = enableMyStepDetector
             )
         }
     }
@@ -254,6 +261,7 @@ fun AppHorizontalPager(
     yaw: Float,
     pitch: Float,
     roll: Float,
+    orientation: Float,
     isMonitoringAngles: Boolean,
     toggleMonitoringAngles: () -> Unit,
     waypoints: SnapshotStateList<Offset>,
@@ -271,6 +279,8 @@ fun AppHorizontalPager(
     setNavigationStartFalse: () -> Unit,
     setLoadingStartFalse: () -> Unit,
     setEnableImu: (Boolean) -> Unit,
+    setEnableMyStepDetector: (Boolean) -> Unit,
+    enableMyStepDetector: Boolean,
     estimatedStride: Float,
     accX: Float,
     accY: Float,
@@ -307,7 +317,11 @@ fun AppHorizontalPager(
                     accX = accX,
                     accY = accY,
                     accZ = accZ,
-                    stepFromMyDetector = stepFromMyDetector
+                    stepFromMyDetector = stepFromMyDetector,
+                    yaw = yaw,
+                    pitch = pitch,
+                    roll = roll,
+                    orientation = orientation
                 )
             }
 
@@ -354,6 +368,8 @@ fun AppHorizontalPager(
                                 setNavigationStartFalse = setNavigationStartFalse,
                                 setLoadingStartFalse = setLoadingStartFalse,
                                 setEnableImu = setEnableImu,
+                                setEnableMyStepDetector = setEnableMyStepDetector,
+                                enableMyStepDetector = enableMyStepDetector,
                             )
                         } ?: ImageBitmap.imageResource(R.drawable.image_placeholder)
                     } else {

@@ -22,10 +22,10 @@ fun lowPassFilter(input: FloatArray, output: FloatArray): FloatArray {
 
 fun lowPass(current: Float, last: Float) = last + ALPHA * (current - last)
 
-class CoroutineLockIndexedList<T> {
+class CoroutineLockIndexedList<T, P> {
     private val lock = ReentrantReadWriteLock()
-    private var list: MutableList<Pair<Long, T>> = mutableListOf()
-    fun put(value: Pair<Long, T>) {
+    private var list: MutableList<Triple<Long, T, P>> = mutableListOf()
+    fun put(value: Triple<Long, T, P>) {
         lock.writeLock().lock()
         try {
             list.add(value)
@@ -33,7 +33,7 @@ class CoroutineLockIndexedList<T> {
             lock.writeLock().unlock()
         }
     }
-    fun get(): Pair<Long, T>{
+    fun get(): Triple<Long, T, P>{
         lock.readLock().lock()
         try {
             return list.last()
@@ -41,7 +41,7 @@ class CoroutineLockIndexedList<T> {
             lock.readLock().unlock()
         }
     }
-    fun get(value: Long): Pair<Long, T>? {
+    fun get(value: Long): Triple<Long, T, P>? {
         lock.readLock().lock()
         return try {
             val closestElement = list.minByOrNull { abs(it.first - value) }

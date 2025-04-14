@@ -1,8 +1,10 @@
 package com.example.wimudatasampler.HorizontalPage
 
 
+import MyStepDetector
 import android.annotation.SuppressLint
 import android.content.Context
+import android.widget.TextView
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.VectorConverter
@@ -86,6 +88,7 @@ fun InferenceHorizontalPage(
     navigationStarted: Boolean,
     loadingStarted: Boolean,
     enableImu: Boolean,
+    enableMyStepDetector: Boolean,
     startFetching: () -> Unit,
     endFetching: () -> Unit,
     userPositionMeters: Offset?, // User's physical location (in meters)
@@ -99,6 +102,7 @@ fun InferenceHorizontalPage(
     setNavigationStartFalse: () -> Unit,
     setLoadingStartFalse: () -> Unit,
     setEnableImu: (Boolean) -> Unit,
+    setEnableMyStepDetector: (Boolean) -> Unit,
     imageBitmap: ImageBitmap,
     selectedMap: MapModels.ImageMap
 ) {
@@ -396,27 +400,6 @@ fun InferenceHorizontalPage(
                 modifier = Modifier
                     .padding(25.dp)
                     .align(Alignment.BottomEnd)
-                    .padding(bottom = 160.dp),
-                containerColor = if (enableImu) colorResource(id = R.color.button_container_green)  else MaterialTheme.colorScheme.errorContainer,
-                onClick = {
-                    // TODO: Disable/Enable IMU
-                    setEnableImu(!enableImu)
-                }
-            ) {
-
-                Icon(
-                    imageVector = if (enableImu) Icons.Outlined.Check else Icons.Outlined.DoDisturb,
-                    contentDescription = "Refresh",
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
-        }
-
-        if (navigationStarted && !loadingStarted) {
-            FloatingActionButton(
-                modifier = Modifier
-                    .padding(25.dp)
-                    .align(Alignment.BottomEnd)
                     .padding(bottom = 80.dp),
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 onClick = { onRefreshButtonClicked() }
@@ -429,6 +412,26 @@ fun InferenceHorizontalPage(
             }
         }
 
+        FloatingActionButton(
+            modifier = Modifier
+                .padding(vertical = 25.dp, horizontal = 100.dp)
+                .align(Alignment.BottomEnd),
+            containerColor = if (enableImu) colorResource(id = R.color.button_container_green)  else MaterialTheme.colorScheme.errorContainer,
+            onClick = {
+                setEnableImu(!enableImu)
+            }
+        ) {
+            Text("IMU")
+        }
+        FloatingActionButton(
+            modifier = Modifier.padding(horizontal = 160.dp, vertical = 25.dp).align(Alignment.BottomEnd),
+            containerColor = if (enableMyStepDetector) colorResource(id = R.color.button_container_green) else MaterialTheme.colorScheme.errorContainer,
+            onClick = {
+                setEnableMyStepDetector(!enableMyStepDetector)
+            }
+        ) {
+            Text(modifier = Modifier.padding(horizontal = 8.dp) ,text = "My Step Detector")
+        }
         FloatingActionButton(
             modifier = Modifier
                 .padding(25.dp)

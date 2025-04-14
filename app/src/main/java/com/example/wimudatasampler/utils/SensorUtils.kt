@@ -7,6 +7,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.util.Log
+import androidx.compose.runtime.mutableStateOf
 
 class SensorUtils(context: Context) : SensorEventListener {
     private var sensorManager: SensorManager =
@@ -27,6 +28,9 @@ class SensorUtils(context: Context) : SensorEventListener {
     private var lastStepTimestamp: Long? = null
     private var stepTimestamps = mutableListOf<Long>()
 
+    private var lastAccChanged = false
+    private var lastMagChanged = false
+
     interface SensorDataListener {
         fun onRotationVectorChanged(rotationVector: FloatArray)
         fun onStepCountChanged(stepCount: Float)
@@ -34,6 +38,7 @@ class SensorUtils(context: Context) : SensorEventListener {
         fun onSingleStepChanged()
         fun onMagChanged(mag: FloatArray)
         fun onMyStepChanged()
+        fun updateOrientation()
     }
 
     private var sensorDataListener: SensorDataListener? = null
@@ -122,6 +127,7 @@ class SensorUtils(context: Context) : SensorEventListener {
                 lastAcc = event.values
                 sensorDataListener?.onAccChanged(event.values)
                 myStepDetector.onSensorChanged(event)
+                lastAccChanged = true
             }
             Sensor.TYPE_STEP_DETECTOR -> {
                 if (event.values[0] == 1.0f) {
@@ -133,7 +139,13 @@ class SensorUtils(context: Context) : SensorEventListener {
             }
             Sensor.TYPE_MAGNETIC_FIELD -> {
                 sensorDataListener?.onMagChanged(event.values)
+                lastMagChanged = true
             }
+        }
+        if (lastAccChanged && lastMagChanged) {
+            sensorDataListener?.updateOrientation()
+            lastAccChanged = false
+            lastMagChanged = false
         }
     }
 
@@ -143,7 +155,6 @@ class SensorUtils(context: Context) : SensorEventListener {
 
     fun getLastRotationVector(): FloatArray? = lastRotationVector
     fun getLastStepCount(): Float? = lastStepCount
-    fun getLastAcc(): FloatArray? = lastAcc
     fun getLastSingleStepTime(): Long? = lastStepTimestamp
     fun getStepTimestamps(): List<Long> = stepTimestamps.toList()
 }
