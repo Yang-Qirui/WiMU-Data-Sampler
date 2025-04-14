@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cancel
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.outlined.Navigation
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -394,11 +396,107 @@ fun InferenceHorizontalPage(
                 tint = MaterialTheme.colorScheme.primary
             )
         }
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+        ) {
+            ExtendedFloatingActionButton(
+                modifier = Modifier
+                    .padding(
+                        start = 20.dp,
+                        top = 20.dp,
+                        bottom = 20.dp
+                    ),
+                containerColor = if (enableMyStepDetector) {
+                    colorResource(id = R.color.button_container_green)
+                } else {
+                    MaterialTheme.colorScheme.errorContainer
+                },
+                onClick = {
+                    setEnableMyStepDetector(!enableMyStepDetector)
+                }
+            ) {
+                Text(
+                    text = "My Step Detector"
+                )
+            }
+
+            Spacer(modifier = Modifier.width(20.dp))
+
+            ExtendedFloatingActionButton(
+                modifier = Modifier
+                    .padding(
+                        top = 20.dp,
+                        bottom = 20.dp
+                    ),
+                containerColor = if (enableImu) {
+                    colorResource(id = R.color.button_container_green)
+                } else {
+                    MaterialTheme.colorScheme.errorContainer
+                },
+                onClick = {
+                    setEnableImu(!enableImu)
+                }
+            ) {
+                Text("IMU")
+            }
+
+            Spacer(modifier = Modifier.width(20.dp))
+
+            FloatingActionButton(
+                modifier = Modifier
+                    .padding(
+                        end = 20.dp,
+                        top = 20.dp,
+                        bottom = 20.dp,
+                    ),
+                containerColor =
+                if (!navigationStarted && loadingStarted) {
+                    colorResource(id = R.color.button_container_green)
+                } else if (navigationStarted && !loadingStarted){
+                    MaterialTheme.colorScheme.errorContainer
+                } else {
+                    MaterialTheme.colorScheme.primaryContainer
+                },
+                onClick = {
+                    if (!navigationStarted && !loadingStarted) {
+                        startFetching()
+                    } else if (navigationStarted && !loadingStarted) {
+                        endFetching()
+                        setNavigationStartFalse()
+                        setLoadingStartFalse()
+                    }
+                }
+            ) {
+                if (!navigationStarted && !loadingStarted) {
+                    Icon(
+                        Icons.Outlined.Navigation,
+                        contentDescription = "Navigation",
+                    )
+                } else if (!navigationStarted && loadingStarted){
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = colorResource(id = R.color.button_content_green),
+                        strokeWidth = 3.dp
+                    )
+                } else if (navigationStarted && !loadingStarted) {
+                    Icon(
+                        Icons.Outlined.Cancel,
+                        contentDescription = "Stop navigation",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
 
         if (navigationStarted && !loadingStarted) {
             FloatingActionButton(
                 modifier = Modifier
-                    .padding(25.dp)
+                    .padding(
+                        end = 20.dp,
+                        top = 20.dp,
+                        bottom = 20.dp,
+                    )
                     .align(Alignment.BottomEnd)
                     .padding(bottom = 80.dp),
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -408,68 +506,6 @@ fun InferenceHorizontalPage(
                     Icons.Outlined.Refresh,
                     contentDescription = "Refresh",
                     tint = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
-        }
-
-        FloatingActionButton(
-            modifier = Modifier
-                .padding(vertical = 25.dp, horizontal = 100.dp)
-                .align(Alignment.BottomEnd),
-            containerColor = if (enableImu) colorResource(id = R.color.button_container_green)  else MaterialTheme.colorScheme.errorContainer,
-            onClick = {
-                setEnableImu(!enableImu)
-            }
-        ) {
-            Text("IMU")
-        }
-        FloatingActionButton(
-            modifier = Modifier.padding(horizontal = 160.dp, vertical = 25.dp).align(Alignment.BottomEnd),
-            containerColor = if (enableMyStepDetector) colorResource(id = R.color.button_container_green) else MaterialTheme.colorScheme.errorContainer,
-            onClick = {
-                setEnableMyStepDetector(!enableMyStepDetector)
-            }
-        ) {
-            Text(modifier = Modifier.padding(horizontal = 8.dp) ,text = "My Step Detector")
-        }
-        FloatingActionButton(
-            modifier = Modifier
-                .padding(25.dp)
-                .align(Alignment.BottomEnd),
-            containerColor =
-            if (!navigationStarted && loadingStarted) {
-                colorResource(id = R.color.button_container_green)
-            } else if (navigationStarted && !loadingStarted){
-                MaterialTheme.colorScheme.errorContainer
-            } else {
-                MaterialTheme.colorScheme.primaryContainer
-            },
-            onClick = {
-                if (!navigationStarted && !loadingStarted) {
-                    startFetching()
-                } else if (navigationStarted && !loadingStarted) {
-                    endFetching()
-                    setNavigationStartFalse()
-                    setLoadingStartFalse()
-                }
-            }
-        ) {
-            if (!navigationStarted && !loadingStarted) {
-                Icon(
-                    Icons.Outlined.Navigation,
-                    contentDescription = "Navigation",
-                )
-            } else if (!navigationStarted && loadingStarted){
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    color = colorResource(id = R.color.button_content_green),
-                    strokeWidth = 3.dp
-                )
-            } else if (navigationStarted && !loadingStarted) {
-                Icon(
-                    Icons.Outlined.Cancel,
-                    contentDescription = "Stop navigation",
-                    tint = MaterialTheme.colorScheme.error
                 )
             }
         }
