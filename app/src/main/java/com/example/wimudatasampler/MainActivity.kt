@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.SensorManager
+import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
@@ -57,14 +58,18 @@ import com.example.wimudatasampler.Pages.SettingScreen
 import com.example.wimudatasampler.navigation.MainActivityDestinations
 import com.example.wimudatasampler.network.NetworkClient
 import com.example.wimudatasampler.ui.theme.WiMUTheme
+import com.example.wimudatasampler.utils.CircularArray
 import com.example.wimudatasampler.utils.CoroutineLockIndexedList
 import com.example.wimudatasampler.utils.KalmanFilter
+import com.example.wimudatasampler.utils.Quadruple
 import com.example.wimudatasampler.utils.SensorUtils
 import com.example.wimudatasampler.utils.TimerUtils
 import com.example.wimudatasampler.utils.lowPassFilter
+import com.example.wimudatasampler.utils.validPostureCheck
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import dagger.hilt.android.AndroidEntryPoint
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.cio.Response
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.Json
 import kotlin.math.cos
@@ -91,6 +96,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var lastAcc: FloatArray? = null
     private var lastGravity = FloatArray(3)
     private var lastGeomagnetic = FloatArray(3)
+    private var lastMag by mutableFloatStateOf(0f)
     private var yaw by mutableFloatStateOf(0f)
     private var pitch by mutableFloatStateOf(0f)
     private var roll by mutableFloatStateOf(0f)
@@ -110,7 +116,10 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var imuOffset by mutableStateOf<Offset?>(null)
     private var imuOffsetHistory = CoroutineLockIndexedList<Offset, Int>()
     private var stepCountHistory by mutableIntStateOf(0)
+    private var latestStepCount by mutableIntStateOf(0)
+    private var eulerHistory = CircularArray<Triple<Float, Float, Float>>(150, true)
     private var targetOffset by mutableStateOf(Offset.Zero)
+    private var lastOffset by mutableStateOf(Offset.Zero)
     private var wifiScanningResults = mutableListOf<String>()
     private var navigationStarted by mutableStateOf(false)
     private var loadingStarted by mutableStateOf(false)
@@ -121,6 +130,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var accY by mutableFloatStateOf(0f)
     private var accZ by mutableFloatStateOf(0f)
     private var filteredDirection = 0f
+    private var firstStart = true
     private var alpha = 0.1f
 
     // The initial installation default value of the persistent variable
@@ -148,9 +158,11 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private val userHeight = 1.7f
     private val strideCoefficient = 0.414f
     private var estimatedStrideLength by mutableFloatStateOf(0f)
+    private var estimatedStrides = mutableListOf<Float>()
 
     private var sysNoise = 1f
     private var obsNoise = 3f
+    private var distFromLastPos = 0f
     // The initial installation default value of the persistent variable
 
 //    private val filter = KalmanFilter(initialState, initialCovariance, matrixQ, fullMatrixR)
@@ -177,32 +189,49 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
     private suspend fun onLatestWifiResultChanged(newValue: List<String>) {
         val wifiTimestamp = newValue[0].trimIndent().split(" ")[0].toLong()
+//        for (item in imuOffsetHistory.list) {
+//            Log.d("item", item.toString())
+//        }
         val closestRecord = imuOffsetHistory.get(wifiTimestamp)
         val latestImuOffset = closestRecord?.second
         val latestTimestamp = closestRecord?.third
+        val latestValidation = closestRecord?.fourth
+//        Log.d("Last", latestImuOffset.toString())
         try {
-            if (latestImuOffset != null) {
-                val response = NetworkClient.fetchData(newValue, latestImuOffset, sysNoise, obsNoise)
-                Log.d("response", response.bodyAsText())
-                val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
-                val dist = sqrt((targetOffset.x - coordinate.x).pow(2) + (targetOffset.y - coordinate.y).pow(2))
-                val estimatedStride = dist / latestTimestamp!!
-                stride = (1 - beta) * stride + beta * estimatedStride
-                targetOffset = Offset(coordinate.x, coordinate.y)
-            } else {
-                val response = NetworkClient.reset(newValue, sysNoise, obsNoise)
-                Log.d("response", response.bodyAsText())
-                val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
-                val dist = sqrt((targetOffset.x - coordinate.x).pow(2) + (targetOffset.y - coordinate.y).pow(2))
-                val estimatedStride = dist / latestTimestamp!!
-                stride = (1 - beta) * stride + beta * estimatedStride
-                targetOffset = Offset(coordinate.x, coordinate.y)
+            var inputImuOffset = latestImuOffset ?: Offset(0f, 0f)
+            if (lastMag > 80 || (latestValidation != null && !latestValidation)) {
+//                sysNoise = 4f
+                inputImuOffset = Offset(0f, 0f)
             }
+            val response = if (!firstStart) {
+                NetworkClient.fetchData(newValue, inputImuOffset, sysNoise, obsNoise)
+            } else {
+                NetworkClient.reset(newValue, sysNoise, obsNoise)
+            }
+            Log.d("current pos", response.bodyAsText())
+            val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
+            Log.d("last pos", "${lastOffset.x}, ${lastOffset.y}")
+            if (!firstStart && latestTimestamp != null && latestTimestamp - latestStepCount != 0) {
+                val delta = sqrt((inputImuOffset.x + lastOffset.x - coordinate.x).pow(2) + (inputImuOffset.y + lastOffset.y - coordinate.y).pow(2))
+                Log.d("Delta", "$delta, ${distFromLastPos + delta}")
+
+                val estimatedStride = (distFromLastPos + delta) / (latestTimestamp - latestStepCount)
+                Log.d("Est", estimatedStride.toString())
+                Log.d("Step diff", "${latestTimestamp - latestStepCount}")
+                latestStepCount = latestTimestamp
+                if (0.45 < estimatedStride && estimatedStride < 0.6) {
+                    stride = (1 - beta) * stride + beta * estimatedStride
+                }
+                estimatedStrides.add(estimatedStride)
+            }
+            targetOffset = Offset(coordinate.x, coordinate.y)
+            lastOffset = Offset(coordinate.x, coordinate.y)
             imuOffset = Offset(0f, 0f)
             imuOffsetHistory.clear()
-            stepCountHistory = 0
+            distFromLastPos = 0f
+            firstStart = false
         } catch (e: Exception) {
-            Log.e("Update Exception", e.toString())
+            e.printStackTrace()
         }
     }
 
@@ -231,7 +260,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                 if (success) {
                     loadingStarted = false
                     navigationStarted = true
-                    delay(3000)
+                    delay(5000)
                 }
             }
         }
@@ -241,7 +270,14 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         motionSensorManager.stopMonitoring()
         imuOffset = null
         imuOffsetHistory.clear()
+        stepCountHistory = 0
+        eulerHistory.clear()
         startInference = false
+        firstStart = true
+        for (item in estimatedStrides) {
+            Log.d("Stride", item.toString())
+        }
+        Log.d("Steps", "$stepCount, $lastStepCountFromMyStepDetector")
         job.cancel("Fetching stopped")
         job = Job()
         scope = CoroutineScope(Dispatchers.IO + job)
@@ -395,7 +431,8 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 accZ = accZ,
                                 stepFromMyDetector = lastStepCountFromMyStepDetector,
                                 setEnableMyStepDetector = {newValue -> enableMyStepDetector = newValue},
-                                enableMyStepDetector = enableMyStepDetector
+                                enableMyStepDetector = enableMyStepDetector,
+                                mag = lastMag
                             )
                         }
                         composable(MainActivityDestinations.Settings.route) {
@@ -472,13 +509,15 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                         val minScanTime = scanResults.minOf { it.timestamp }
                         val maxScanTime = scanResults.maxOf { it.timestamp }
                         Log.d("Diff", "${maxScanTime - minScanTime}")
-                        val resultList = scanResults.map { scanResult ->
-                            "${(minScanTime / 1000 + bootTime)} ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level}\n"
-                        }
-                        latestWifiScanResults = resultList
-                        for (result in resultList) {
-                            wifiScanningResults.add(result)
+                        if (maxScanTime - minScanTime < 500_000) {
+                            val resultList = scanResults.map { scanResult ->
+                                "${(minScanTime / 1000 + bootTime)} ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level}\n"
+                            }
+                            latestWifiScanResults = resultList
+                            for (result in resultList) {
+                                wifiScanningResults.add(result)
 //                            Log.d("RECEIVED_RES", result)
+                            }
                         }
                     } else {
                         Log.e("RECEIVED", "No Wi-Fi scan results found")
@@ -504,39 +543,63 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         yaw = Math.toDegrees(orientations[0].toDouble()).toFloat()
         pitch = Math.toDegrees(orientations[1].toDouble()).toFloat()
         roll = Math.toDegrees(orientations[2].toDouble()).toFloat()
+        eulerHistory.add(Triple(yaw, pitch, roll))
+//        val recentInvalidCount = eulerHistory.checkAll()
+//        enableImu = if (recentInvalidCount / eulerHistory.getSize() > 0.6) {
+//            false
+//        } else {
+//            true
+//        }
     }
 
     override fun onSingleStepChanged() {
-        // TODO: 进行记录。在start_fetching中根据wifi时间戳进行匹配。可能需要给imuOffset上锁。imuOffset记录从上一次位置到当前位置的位移
-        if (imuOffset != null && !enableMyStepDetector) {
-            val dx = -stride * cos(Math.toRadians(yaw.toDouble()).toFloat())
-            val dy = -stride * sin(Math.toRadians(yaw.toDouble()).toFloat())
-            val x = imuOffset!!.x + dx // north is negative axis
-            val y = imuOffset!!.y + dy
-            imuOffset = Offset(x, y)
+        if (!enableMyStepDetector) {
             stepCountHistory += 1
-            if (startInference){
-                imuOffsetHistory.put(Triple(System.currentTimeMillis(), imuOffset!!, stepCountHistory))
-            }
-            if (enableImu) {
-                targetOffset = Offset(targetOffset.x + dx, targetOffset.y + dy)
+//            Log.d("STEP COUNT", "$stepCountHistory, $stepCount, $lastStepCountFromMyStepDetector")
+            if (imuOffset != null) {
+                val dx = -stride * cos(Math.toRadians(yaw.toDouble()).toFloat())
+                val dy = -stride * sin(Math.toRadians(yaw.toDouble()).toFloat())
+                distFromLastPos += stride
+                val x = imuOffset!!.x + dx // north is negative axis
+                val y = imuOffset!!.y + dy
+                imuOffset = Offset(x, y)
+                if (startInference && enableImu && validPostureCheck(pitch, roll)) {
+                    imuOffsetHistory.put(
+                        Quadruple(
+                            System.currentTimeMillis(),
+                            imuOffset!!,
+                            stepCountHistory,
+                            validPostureCheck(pitch, roll)
+                        )
+                    )
+                    targetOffset = Offset(targetOffset.x + dx, targetOffset.y + dy)
+                }
             }
         }
     }
 
     override fun onMyStepChanged() {
-        if (imuOffset != null && enableMyStepDetector) {
-            val dx = -stride * cos(Math.toRadians(yaw.toDouble()).toFloat())
-            val dy = -stride * sin(Math.toRadians(yaw.toDouble()).toFloat())
-            val x = imuOffset!!.x + dx // north is negative axis
-            val y = imuOffset!!.y + dy
-            imuOffset = Offset(x, y)
+        lastStepCountFromMyStepDetector += 1
+        if (enableMyStepDetector) {
             stepCountHistory += 1
-            if (startInference){
-                imuOffsetHistory.put(Triple(System.currentTimeMillis(), imuOffset!!, stepCountHistory))
-            }
-            if (enableImu) {
-                targetOffset = Offset(targetOffset.x + dx, targetOffset.y + dy)
+            if (imuOffset != null) {
+                val dx = -stride * cos(Math.toRadians(yaw.toDouble()).toFloat())
+                val dy = -stride * sin(Math.toRadians(yaw.toDouble()).toFloat())
+                distFromLastPos += stride
+                val x = imuOffset!!.x + dx // north is negative axis
+                val y = imuOffset!!.y + dy
+                imuOffset = Offset(x, y)
+                if (startInference && enableImu && validPostureCheck(pitch, roll)) {
+                    imuOffsetHistory.put(
+                        Quadruple(
+                            System.currentTimeMillis(),
+                            imuOffset!!,
+                            stepCountHistory,
+                            validPostureCheck(pitch, roll)
+                        )
+                    )
+                    targetOffset = Offset(targetOffset.x + dx, targetOffset.y + dy)
+                }
             }
         }
     }
@@ -549,26 +612,30 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
     override fun onMagChanged(mag: FloatArray) {
         lastGeomagnetic = lowPassFilter(mag.copyOf(), lastGeomagnetic)
+        val x = mag[0]
+        val y = mag[1]
+        val z = mag[2]
+        lastMag = sqrt(x * x + y * y + z * z)
     }
 
     override fun onAccChanged(acc: FloatArray) {
         lastGravity = lowPassFilter(acc.copyOf(), lastGravity)
-        accX = acc[0]
-        accY = acc[1]
-        accZ = acc[2]
-        val acceleration = sqrt(
-            acc[0].pow(2) +
-                    acc[1].pow(2) +
-                    acc[2].pow(2)
-        ) - SensorManager.GRAVITY_EARTH
-
-        if (acceleration > 2.0f) { // 检测加速度峰值（步伐特征）
-            val currentTime = System.currentTimeMillis()
-            val lastStepTime = this.motionSensorManager.getLastSingleStepTime()
-            if (lastStepTime != null && currentTime - lastStepTime > 300) { // 过滤间隔小于300ms的误检
-                estimatedStrideLength = userHeight * strideCoefficient
-            }
-        }
+//        accX = acc[0]
+//        accY = acc[1]
+//        accZ = acc[2]
+//        val acceleration = sqrt(
+//            acc[0].pow(2) +
+//                    acc[1].pow(2) +
+//                    acc[2].pow(2)
+//        ) - SensorManager.GRAVITY_EARTH
+//
+//        if (acceleration > 2.0f) { // 检测加速度峰值（步伐特征）
+//            val currentTime = System.currentTimeMillis()
+//            val lastStepTime = this.motionSensorManager.getLastSingleStepTime()
+//            if (lastStepTime != null && currentTime - lastStepTime > 300) { // 过滤间隔小于300ms的误检
+//                estimatedStrideLength = userHeight * strideCoefficient
+//            }
+//        }
     }
 
     override fun updateOrientation() {
@@ -583,6 +650,8 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
             SensorManager.AXIS_Z,
             rotationMatrix
         )
+        val aEarth = FloatArray(3)
+//        SensorManager.rotateVector(aEarth, rotationMatrix, accelerometerData)
         SensorManager.getOrientation(rotationMatrix, orientationAngles)
 
         // 转换加速度到地球坐标系
