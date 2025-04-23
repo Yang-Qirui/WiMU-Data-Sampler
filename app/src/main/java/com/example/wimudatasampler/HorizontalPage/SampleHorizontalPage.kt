@@ -56,7 +56,8 @@ fun SampleHorizontalPage(
     yaw: Float,
     pitch: Float,
     roll: Float,
-    orientation: Float
+    orientation: Float,
+    mag: Float
 ) {
 
     var wifiFreq by remember {
@@ -87,12 +88,11 @@ fun SampleHorizontalPage(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text("Estimated Stride: $estimatedStride")
-            Spacer(modifier = Modifier.height(16.dp))
             // Display acceleration values
             Text("X: ${accX.toInt()} Y: ${accY.toInt()} Z: ${accZ.toInt()} Step: $stepFromMyDetector")
             Text("yaw: ${yaw.toInt()} pitch: ${pitch.toInt()} roll: ${roll.toInt()}")
             Text("orientation: ${orientation.toInt()}")
+            Text("mag: $mag")
             Spacer(modifier = Modifier.height(16.dp))
             Spacer(modifier = Modifier.height(16.dp))
             // Select a waypoint to collect data

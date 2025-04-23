@@ -103,7 +103,8 @@ fun MainScreen(
     accZ: Float,
     stepFromMyDetector: Float,
     setEnableMyStepDetector: (Boolean) -> Unit,
-    enableMyStepDetector: Boolean
+    enableMyStepDetector: Boolean,
+    mag: Float
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -238,7 +239,8 @@ fun MainScreen(
                 accZ = accZ,
                 stepFromMyDetector = stepFromMyDetector,
                 setEnableMyStepDetector = setEnableMyStepDetector,
-                enableMyStepDetector = enableMyStepDetector
+                enableMyStepDetector = enableMyStepDetector,
+                mag = mag
             )
         }
     }
@@ -285,7 +287,8 @@ fun AppHorizontalPager(
     accX: Float,
     accY: Float,
     accZ: Float,
-    stepFromMyDetector: Float
+    stepFromMyDetector: Float,
+    mag: Float
 ) {
     LaunchedEffect(state) {
         pagerState.scrollToPage(state)
@@ -321,7 +324,8 @@ fun AppHorizontalPager(
                     yaw = yaw,
                     pitch = pitch,
                     roll = roll,
-                    orientation = orientation
+                    orientation = orientation,
+                    mag = mag
                 )
             }
 

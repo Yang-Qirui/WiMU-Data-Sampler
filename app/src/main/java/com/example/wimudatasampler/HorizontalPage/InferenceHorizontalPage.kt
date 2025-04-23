@@ -108,6 +108,7 @@ fun InferenceHorizontalPage(
     imageBitmap: ImageBitmap,
     selectedMap: MapModels.ImageMap
 ) {
+
     val jDMode = true
     val scope = rememberCoroutineScope()
 
@@ -377,7 +378,7 @@ fun InferenceHorizontalPage(
                     .padding(vertical = 4.dp, horizontal = 8.dp),
                 text = when {
                     !navigationStarted -> "Ready to go"
-                    else -> "yaw ${userHeading.roundToInt()}, ${imuOffset?.x?.roundToInt()}, ${imuOffset?.y?.roundToInt()}, ${targetOffset?.x?.roundToInt()}, ${targetOffset?.y?.roundToInt()}"
+                    else -> "yaw ${userHeading.roundToInt()}, imu (${imuOffset?.x?.roundToInt()}, ${imuOffset?.y?.roundToInt()}), pred (${targetOffset?.x?.roundToInt()}, ${targetOffset?.y?.roundToInt()})"
                 },
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )

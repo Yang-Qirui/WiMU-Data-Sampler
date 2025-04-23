@@ -21,7 +21,7 @@ object NetworkClient {
         val wifiEntries = mutableListOf<DataEntry>()
         for (line in wifiInput) {
             val indentLine = line.trimIndent()
-            Log.d("Line", indentLine)
+//            Log.d("Line", indentLine)
             val parts = indentLine.split(" ")
             if (parts.size >= 5) {
                 try {
