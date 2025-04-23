@@ -163,6 +163,8 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var sysNoise = 1f
     private var obsNoise = 3f
     private var distFromLastPos = 0f
+
+    private var period = 5f
     // The initial installation default value of the persistent variable
 
 //    private val filter = KalmanFilter(initialState, initialCovariance, matrixQ, fullMatrixR)
@@ -260,7 +262,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                 if (success) {
                     loadingStarted = false
                     navigationStarted = true
-                    delay(5000)
+                    delay((period * 1000).toLong())
                 }
             }
         }
@@ -449,6 +451,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 matrixRPowTwo = matrixRPowTwo,
                                 sysNoise = sysNoise,
                                 obsNoise = obsNoise,
+                                period = period,
                                 updateStride = { newStride ->
                                     stride = newStride
                                 },
@@ -481,6 +484,9 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 },
                                 updateObsNoise = { newObsNoise ->
                                     obsNoise = newObsNoise
+                                },
+                                updatePeriod = { newPeriod ->
+                                    period = newPeriod
                                 }
                             )
                         }
