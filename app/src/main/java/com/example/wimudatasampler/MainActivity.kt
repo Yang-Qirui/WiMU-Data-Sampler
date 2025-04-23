@@ -151,6 +151,8 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
     private var sysNoise = 1f
     private var obsNoise = 3f
+
+    private var period = 3f
     // The initial installation default value of the persistent variable
 
 //    private val filter = KalmanFilter(initialState, initialCovariance, matrixQ, fullMatrixR)
@@ -231,7 +233,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                 if (success) {
                     loadingStarted = false
                     navigationStarted = true
-                    delay(3000)
+                    delay((period * 1000).toLong())
                 }
             }
         }
@@ -342,6 +344,8 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
                         sysNoise = preferences[UserPreferencesKeys.SYS_NOISE] ?: sysNoise
                         obsNoise = preferences[UserPreferencesKeys.OBS_NOISE] ?: obsNoise
+
+                        period = preferences[UserPreferencesKeys.PERIOD] ?: period
                     }
                 }
 
@@ -412,6 +416,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 matrixRPowTwo = matrixRPowTwo,
                                 sysNoise = sysNoise,
                                 obsNoise = obsNoise,
+                                period = period,
                                 updateStride = { newStride ->
                                     stride = newStride
                                 },
@@ -444,7 +449,10 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 },
                                 updateObsNoise = { newObsNoise ->
                                     obsNoise = newObsNoise
-                                }
+                                },
+                                updatePeriod = { newPeriod ->
+                                    period = newPeriod
+                                },
                             )
                         }
                         composable(MainActivityDestinations.MapChoosing.route) {

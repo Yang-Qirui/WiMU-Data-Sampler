@@ -32,4 +32,6 @@ object UserPreferencesKeys {
 
     val SYS_NOISE = floatPreferencesKey("sys_noise")
     val OBS_NOISE = floatPreferencesKey("bos_noise")
+
+    val PERIOD = floatPreferencesKey("period")
 }

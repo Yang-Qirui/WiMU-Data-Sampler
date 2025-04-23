@@ -71,6 +71,7 @@ fun SettingScreen(
     matrixRPowTwo: Int,
     sysNoise: Float,
     obsNoise: Float,
+    period: Float,
     updateStride: (Float) ->Unit,
     updateBeta: (Float) ->Unit,
     updateInitialState: (DoubleArray) -> Unit,
@@ -81,7 +82,8 @@ fun SettingScreen(
     updateMatrixRPowTwo: (Int) ->Unit,
     updateFullMatrixR: (Array<DoubleArray>) -> Unit,
     updateSysNoise: (Float) -> Unit,
-    updateObsNoise: (Float) -> Unit
+    updateObsNoise: (Float) -> Unit,
+    updatePeriod: (Float) -> Unit
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -163,6 +165,7 @@ fun SettingScreen(
         var curMatrixRPowTwo by remember { mutableStateOf(matrixRPowTwo.toString()) }
         var curSysNoise by remember { mutableStateOf(sysNoise.toString()) }
         var curObsNoise by remember { mutableStateOf(obsNoise.toString()) }
+        var curPeriod by remember { mutableStateOf(period.toString()) }
 
         Column(
             modifier = Modifier
@@ -630,6 +633,44 @@ fun SettingScreen(
                 }
             }
 
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                thickness = 1.dp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Row(Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(8.dp)
+                ) {
+                    Text(
+                        text = "period",
+                        style = TextStyle(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        ),
+                        fontFamily = styleScriptFamily,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 4.dp)
+                    )
+                    OutlinedTextField(
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Decimal,
+                            imeAction = ImeAction.Done
+                        ),
+                        value = curPeriod,
+                        onValueChange = { value ->
+                            curPeriod = value
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("") }
+                    )
+                }
+            }
+
             val lifecycle = LocalLifecycleOwner.current.lifecycle
             val lifecycleScope = remember { lifecycle.coroutineScope }
 
@@ -682,31 +723,33 @@ fun SettingScreen(
                                 ),
                             )
                             saveUserPreferences(
-                                context=context,
-                                stride = curStride.toFloatOrNull()?:stride,
-                                beta = curBeta.toFloatOrNull()?:beta,
+                                context = context,
+                                stride = curStride.toFloatOrNull() ?: stride,
+                                beta = curBeta.toFloatOrNull() ?: beta,
                                 initialState = tempInitialState,
                                 initialCovariance = tempInitialCovariance,
                                 matrixQ = tempCurMatrixQ,
                                 matrixR = tempCurMatrixR,
-                                matrixRPowOne = curMatrixRPowOne.toIntOrNull()?:matrixRPowOne,
-                                matrixRPowTwo = curMatrixRPowTwo.toIntOrNull()?:matrixRPowTwo,
-                                sysNoise = curSysNoise.toFloatOrNull()?:sysNoise,
-                                obsNoise = curObsNoise.toFloatOrNull()?:obsNoise,
+                                matrixRPowOne = curMatrixRPowOne.toIntOrNull() ?: matrixRPowOne,
+                                matrixRPowTwo = curMatrixRPowTwo.toIntOrNull() ?: matrixRPowTwo,
+                                sysNoise = curSysNoise.toFloatOrNull() ?: sysNoise,
+                                obsNoise = curObsNoise.toFloatOrNull() ?: obsNoise,
+                                period = curPeriod.toFloatOrNull() ?: period
                             )
-                            updateStride(curStride.toFloatOrNull()?:stride)
-                            updateBeta(curBeta.toFloatOrNull()?:beta)
+                            updateStride(curStride.toFloatOrNull() ?: stride)
+                            updateBeta(curBeta.toFloatOrNull() ?: beta)
                             updateInitialState(tempInitialState)
                             updateInitialCovariance(tempInitialCovariance)
                             updateMatrixQ(tempCurMatrixQ)
                             updateMatrixR(tempCurMatrixR)
-                            updateMatrixRPowOne(curMatrixRPowOne.toIntOrNull()?:matrixRPowOne)
-                            updateMatrixRPowTwo(curMatrixRPowTwo.toIntOrNull()?:matrixRPowTwo)
+                            updateMatrixRPowOne(curMatrixRPowOne.toIntOrNull() ?: matrixRPowOne)
+                            updateMatrixRPowTwo(curMatrixRPowTwo.toIntOrNull() ?: matrixRPowTwo)
                             updateFullMatrixR(tempFullCurMatrixR)
-                            updateSysNoise(curSysNoise.toFloatOrNull()?:sysNoise)
-                            updateObsNoise(curObsNoise.toFloatOrNull()?:obsNoise)
+                            updateSysNoise(curSysNoise.toFloatOrNull() ?: sysNoise)
+                            updateObsNoise(curObsNoise.toFloatOrNull() ?: obsNoise)
+                            updatePeriod(curPeriod.toFloatOrNull() ?: period)
                         } catch (e: Exception) {
-                            Log.e("SAVE","Save failed: ${e.message}")
+                            Log.e("SAVE", "Save failed: ${e.message}")
                         }
                     }
                 },
@@ -730,7 +773,8 @@ fun SettingScreen(
                         matrixRPowOne != curMatrixRPowOne.toIntOrNull() ||
                         matrixRPowTwo != curMatrixRPowTwo.toIntOrNull() ||
                         sysNoise != curSysNoise.toFloatOrNull() ||
-                        obsNoise != curObsNoise.toFloatOrNull())
+                        obsNoise != curObsNoise.toFloatOrNull() ||
+                        period != curPeriod.toFloatOrNull())
             ) {
                 Text("SAVE")
             }
@@ -749,7 +793,8 @@ suspend fun saveUserPreferences(
     matrixRPowOne: Int,
     matrixRPowTwo: Int,
     sysNoise: Float,
-    obsNoise: Float
+    obsNoise: Float,
+    period: Float
 ) {
     context.dataStore.edit { preferences ->
         preferences[UserPreferencesKeys.STRIDE] = stride
@@ -779,5 +824,7 @@ suspend fun saveUserPreferences(
 
         preferences[UserPreferencesKeys.SYS_NOISE] = sysNoise
         preferences[UserPreferencesKeys.OBS_NOISE] = obsNoise
+
+        preferences[UserPreferencesKeys.PERIOD] = period
     }
 }
