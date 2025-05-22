@@ -48,7 +48,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.coroutineScope
 import androidx.navigation.NavController
 import com.example.wimudatasampler.R
-import com.example.wimudatasampler.UserPreferencesKeys
+import com.example.wimudatasampler.utils.UserPreferencesKeys
 import com.example.wimudatasampler.dataStore
 import com.example.wimudatasampler.navigation.MainActivityDestinations
 import kotlinx.coroutines.launch
@@ -72,6 +72,9 @@ fun SettingScreen(
     sysNoise: Float,
     obsNoise: Float,
     period: Float,
+    fetchUrl:String,
+    resetUrl:String,
+    azimuthOffset: Float,
     updateStride: (Float) ->Unit,
     updateBeta: (Float) ->Unit,
     updateInitialState: (DoubleArray) -> Unit,
@@ -83,7 +86,10 @@ fun SettingScreen(
     updateFullMatrixR: (Array<DoubleArray>) -> Unit,
     updateSysNoise: (Float) -> Unit,
     updateObsNoise: (Float) -> Unit,
-    updatePeriod: (Float) -> Unit
+    updatePeriod: (Float) -> Unit,
+    updateFetchUrl:(String) -> Unit,
+    updateResetUrl:(String) -> Unit,
+    updateAzimuthOffset:(Float) -> Unit
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -166,6 +172,9 @@ fun SettingScreen(
         var curSysNoise by remember { mutableStateOf(sysNoise.toString()) }
         var curObsNoise by remember { mutableStateOf(obsNoise.toString()) }
         var curPeriod by remember { mutableStateOf(period.toString()) }
+        var curFetchUrl by remember { mutableStateOf(fetchUrl) }
+        var curResetUrl by remember { mutableStateOf(resetUrl) }
+        var curAzimuthOffset by remember { mutableStateOf(azimuthOffset.toString()) }
 
         Column(
             modifier = Modifier
@@ -177,6 +186,94 @@ fun SettingScreen(
             val styleScriptFamily = FontFamily(
                 Font(R.font.style_script, FontWeight.Normal),
             )
+
+            Column(
+                modifier = Modifier
+                    .padding(8.dp)
+            ) {
+                Text(
+                    text = "Azimuth Offset",
+                    style = TextStyle(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    ),
+                    fontFamily = styleScriptFamily,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp)
+                )
+                OutlinedTextField(
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Decimal,
+                        imeAction = ImeAction.Done
+                    ),
+                    value = curAzimuthOffset,
+                    onValueChange = { value ->
+                        curAzimuthOffset = value
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("") }
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .padding(8.dp)
+            ) {
+                Text(
+                    text = "Fetch URL",
+                    style = TextStyle(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    ),
+                    fontFamily = styleScriptFamily,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp)
+                )
+                OutlinedTextField(
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Uri,
+                        imeAction = ImeAction.Done
+                    ),
+                    value = curFetchUrl,
+                    onValueChange = { value ->
+                        curFetchUrl = value
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("") }
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .padding(8.dp)
+            ) {
+                Text(
+                    text = "Reset URL",
+                    style = TextStyle(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    ),
+                    fontFamily = styleScriptFamily,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp)
+                )
+                OutlinedTextField(
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Uri,
+                        imeAction = ImeAction.Done
+                    ),
+                    value = curResetUrl,
+                    onValueChange = { value ->
+                        curResetUrl = value
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("") }
+                )
+            }
+
             Row(Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier
@@ -734,7 +831,10 @@ fun SettingScreen(
                                 matrixRPowTwo = curMatrixRPowTwo.toIntOrNull() ?: matrixRPowTwo,
                                 sysNoise = curSysNoise.toFloatOrNull() ?: sysNoise,
                                 obsNoise = curObsNoise.toFloatOrNull() ?: obsNoise,
-                                period = curPeriod.toFloatOrNull() ?: period
+                                period = curPeriod.toFloatOrNull() ?: period,
+                                fetchUrl = curFetchUrl,
+                                resetUrl = curResetUrl,
+                                azimuthOffset = curAzimuthOffset.toFloatOrNull()?:azimuthOffset
                             )
                             updateStride(curStride.toFloatOrNull() ?: stride)
                             updateBeta(curBeta.toFloatOrNull() ?: beta)
@@ -748,6 +848,9 @@ fun SettingScreen(
                             updateSysNoise(curSysNoise.toFloatOrNull() ?: sysNoise)
                             updateObsNoise(curObsNoise.toFloatOrNull() ?: obsNoise)
                             updatePeriod(curPeriod.toFloatOrNull() ?: period)
+                            updateFetchUrl(curFetchUrl)
+                            updateResetUrl(curResetUrl)
+                            updateAzimuthOffset(curAzimuthOffset.toFloatOrNull() ?: azimuthOffset)
                         } catch (e: Exception) {
                             Log.e("SAVE", "Save failed: ${e.message}")
                         }
@@ -774,7 +877,10 @@ fun SettingScreen(
                         matrixRPowTwo != curMatrixRPowTwo.toIntOrNull() ||
                         sysNoise != curSysNoise.toFloatOrNull() ||
                         obsNoise != curObsNoise.toFloatOrNull() ||
-                        period != curPeriod.toFloatOrNull())
+                        period != curPeriod.toFloatOrNull()) ||
+                        fetchUrl != curFetchUrl ||
+                        resetUrl != curResetUrl ||
+                        azimuthOffset != curAzimuthOffset.toFloatOrNull()
             ) {
                 Text("SAVE")
             }
@@ -794,7 +900,10 @@ suspend fun saveUserPreferences(
     matrixRPowTwo: Int,
     sysNoise: Float,
     obsNoise: Float,
-    period: Float
+    period: Float,
+    fetchUrl: String,
+    resetUrl: String,
+    azimuthOffset: Float
 ) {
     context.dataStore.edit { preferences ->
         preferences[UserPreferencesKeys.STRIDE] = stride
@@ -826,5 +935,9 @@ suspend fun saveUserPreferences(
         preferences[UserPreferencesKeys.OBS_NOISE] = obsNoise
 
         preferences[UserPreferencesKeys.PERIOD] = period
+
+        preferences[UserPreferencesKeys.FETCH_URL] = fetchUrl
+        preferences[UserPreferencesKeys.RESET_URL] = resetUrl
+        preferences[UserPreferencesKeys.AZIMUTH_OFFSET] = azimuthOffset
     }
 }

@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.SensorManager
-import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
@@ -47,7 +46,6 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.datastore.preferences.core.edit
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -60,16 +58,15 @@ import com.example.wimudatasampler.network.NetworkClient
 import com.example.wimudatasampler.ui.theme.WiMUTheme
 import com.example.wimudatasampler.utils.CircularArray
 import com.example.wimudatasampler.utils.CoroutineLockIndexedList
-import com.example.wimudatasampler.utils.KalmanFilter
 import com.example.wimudatasampler.utils.Quadruple
 import com.example.wimudatasampler.utils.SensorUtils
 import com.example.wimudatasampler.utils.TimerUtils
+import com.example.wimudatasampler.utils.UserPreferencesKeys
 import com.example.wimudatasampler.utils.lowPassFilter
 import com.example.wimudatasampler.utils.validPostureCheck
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import dagger.hilt.android.AndroidEntryPoint
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.cio.Response
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.Json
 import kotlin.math.cos
@@ -165,6 +162,10 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var distFromLastPos = 0f
 
     private var period = 5f
+
+    private var fetchUrl = "http://limcpu1.cse.ust.hk:7860/wimu/inference"
+    private var resetUrl = "http://limcpu1.cse.ust.hk:7860/wimu/reset"
+    private var azimuthOffset = 90f
     // The initial installation default value of the persistent variable
 
 //    private val filter = KalmanFilter(initialState, initialCovariance, matrixQ, fullMatrixR)
@@ -206,9 +207,20 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                 inputImuOffset = Offset(0f, 0f)
             }
             val response = if (!firstStart) {
-                NetworkClient.fetchData(newValue, inputImuOffset, sysNoise, obsNoise)
+                NetworkClient.fetchData(
+                    url = fetchUrl,
+                    wifiResult = newValue,
+                    imuInput = inputImuOffset,
+                    sysNoise = sysNoise,
+                    obsNoise = obsNoise
+                )
             } else {
-                NetworkClient.reset(newValue, sysNoise, obsNoise)
+                NetworkClient.reset(
+                    url = resetUrl,
+                    wifiResult = newValue,
+                    sysNoise = sysNoise,
+                    obsNoise = obsNoise
+                )
             }
             Log.d("current pos", response.bodyAsText())
             val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
@@ -380,6 +392,11 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
                         sysNoise = preferences[UserPreferencesKeys.SYS_NOISE] ?: sysNoise
                         obsNoise = preferences[UserPreferencesKeys.OBS_NOISE] ?: obsNoise
+
+                        fetchUrl = preferences[UserPreferencesKeys.FETCH_URL] ?:fetchUrl
+                        resetUrl = preferences[UserPreferencesKeys.RESET_URL] ?: resetUrl
+
+                        azimuthOffset = preferences[UserPreferencesKeys.AZIMUTH_OFFSET] ?: azimuthOffset
                     }
                 }
 
@@ -452,6 +469,9 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 sysNoise = sysNoise,
                                 obsNoise = obsNoise,
                                 period = period,
+                                fetchUrl = fetchUrl,
+                                resetUrl = resetUrl,
+                                azimuthOffset = azimuthOffset,
                                 updateStride = { newStride ->
                                     stride = newStride
                                 },
@@ -487,6 +507,15 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 },
                                 updatePeriod = { newPeriod ->
                                     period = newPeriod
+                                },
+                                updateFetchUrl = { newFetchUrl ->
+                                    fetchUrl = newFetchUrl
+                                },
+                                updateResetUrl = {newResetUrl ->
+                                    resetUrl = newResetUrl
+                                },
+                                updateAzimuthOffset = {newAzimuthOffset ->
+                                    azimuthOffset = newAzimuthOffset
                                 }
                             )
                         }
@@ -547,7 +576,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         SensorManager.getRotationMatrixFromVector(rotationMatrix, rotationVector)
         val orientations = FloatArray(3)
         SensorManager.getOrientation(rotationMatrix, orientations)
-        yaw = Math.toDegrees(orientations[0].toDouble()).toFloat() + 90
+        yaw = Math.toDegrees(orientations[0].toDouble()).toFloat() + azimuthOffset
         pitch = Math.toDegrees(orientations[1].toDouble()).toFloat()
         roll = Math.toDegrees(orientations[2].toDouble()).toFloat()
         eulerHistory.add(Triple(yaw, pitch, roll))
