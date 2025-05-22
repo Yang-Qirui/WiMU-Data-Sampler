@@ -49,7 +49,7 @@ object NetworkClient {
     ): HttpResponse {
         val wifiEntries = parseDataEntry(wifiResult)
         val request = RequestData(wifiEntries, imuInput.x, imuInput.y, sysNoise, obsNoise)
-        return client.post(url) {
+        return client.post(url + "/wimu/inference") {
             contentType(ContentType.Application.Json)
             setBody(Json.encodeToString(request))
         }
@@ -63,7 +63,7 @@ object NetworkClient {
     ): HttpResponse {
         val wifiEntries = parseDataEntry(wifiResult)
         val request = RequestData(wifiEntries, null, null, sysNoise, obsNoise)
-        return client.post(url) {
+        return client.post(url + "/wimu/reset") {
             contentType(ContentType.Application.Json)
             setBody(Json.encodeToString(request))
         }

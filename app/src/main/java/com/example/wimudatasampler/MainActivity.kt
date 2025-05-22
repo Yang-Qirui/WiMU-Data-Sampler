@@ -163,8 +163,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
     private var period = 5f
 
-    private var fetchUrl = "http://limcpu1.cse.ust.hk:7860/wimu/inference"
-    private var resetUrl = "http://limcpu1.cse.ust.hk:7860/wimu/reset"
+    private var url = "http://limcpu1.cse.ust.hk:7860"
     private var azimuthOffset = 90f
     // The initial installation default value of the persistent variable
 
@@ -208,7 +207,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
             }
             val response = if (!firstStart) {
                 NetworkClient.fetchData(
-                    url = fetchUrl,
+                    url = url,
                     wifiResult = newValue,
                     imuInput = inputImuOffset,
                     sysNoise = sysNoise,
@@ -216,7 +215,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                 )
             } else {
                 NetworkClient.reset(
-                    url = resetUrl,
+                    url = url,
                     wifiResult = newValue,
                     sysNoise = sysNoise,
                     obsNoise = obsNoise
@@ -393,8 +392,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                         sysNoise = preferences[UserPreferencesKeys.SYS_NOISE] ?: sysNoise
                         obsNoise = preferences[UserPreferencesKeys.OBS_NOISE] ?: obsNoise
 
-                        fetchUrl = preferences[UserPreferencesKeys.FETCH_URL] ?:fetchUrl
-                        resetUrl = preferences[UserPreferencesKeys.RESET_URL] ?: resetUrl
+                        url = preferences[UserPreferencesKeys.URL] ?:url
 
                         azimuthOffset = preferences[UserPreferencesKeys.AZIMUTH_OFFSET] ?: azimuthOffset
                     }
@@ -469,8 +467,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 sysNoise = sysNoise,
                                 obsNoise = obsNoise,
                                 period = period,
-                                fetchUrl = fetchUrl,
-                                resetUrl = resetUrl,
+                                url = url,
                                 azimuthOffset = azimuthOffset,
                                 updateStride = { newStride ->
                                     stride = newStride
@@ -508,11 +505,8 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                                 updatePeriod = { newPeriod ->
                                     period = newPeriod
                                 },
-                                updateFetchUrl = { newFetchUrl ->
-                                    fetchUrl = newFetchUrl
-                                },
-                                updateResetUrl = {newResetUrl ->
-                                    resetUrl = newResetUrl
+                                updateUrl = { newUrl ->
+                                    url = newUrl
                                 },
                                 updateAzimuthOffset = {newAzimuthOffset ->
                                     azimuthOffset = newAzimuthOffset

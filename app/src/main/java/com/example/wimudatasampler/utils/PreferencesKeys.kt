@@ -36,8 +36,7 @@ object UserPreferencesKeys {
 
     val PERIOD = floatPreferencesKey("period")
 
-    val FETCH_URL = stringPreferencesKey("fetch_url")
-    val RESET_URL = stringPreferencesKey("reset_url")
+    val URL = stringPreferencesKey("url")
 
     val AZIMUTH_OFFSET = floatPreferencesKey("azimuth_offset")
 }
