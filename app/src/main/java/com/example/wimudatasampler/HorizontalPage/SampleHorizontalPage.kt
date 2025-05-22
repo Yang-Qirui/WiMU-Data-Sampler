@@ -89,11 +89,10 @@ fun SampleHorizontalPage(
             verticalArrangement = Arrangement.Center
         ) {
             // Display acceleration values
-            Text("X: ${accX.toInt()} Y: ${accY.toInt()} Z: ${accZ.toInt()} Step: $stepFromMyDetector")
+//            Text("X: ${accX.toInt()} Y: ${accY.toInt()} Z: ${accZ.toInt()} Step: $stepFromMyDetector")
             Text("yaw: ${yaw.toInt()} pitch: ${pitch.toInt()} roll: ${roll.toInt()}")
-            Text("orientation: ${orientation.toInt()}")
-            Text("mag: $mag")
-            Spacer(modifier = Modifier.height(16.dp))
+//            Text("orientation: ${orientation.toInt()}")
+//            Text("mag: $mag")
             Spacer(modifier = Modifier.height(16.dp))
             // Select a waypoint to collect data
             Button(onClick = {
@@ -157,7 +156,7 @@ fun SampleHorizontalPage(
                 onValueChange = { newText ->
                     dirName = newText
                 },
-                label = { Text("Enter the name of save directory") },
+                label = { Text("Save directory") },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Text,
                     imeAction = ImeAction.Done
@@ -259,5 +258,4 @@ fun SampleHorizontalPage(
             }
         }
     }
-
 }

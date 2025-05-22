@@ -515,14 +515,15 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                         val minScanTime = scanResults.minOf { it.timestamp }
                         val maxScanTime = scanResults.maxOf { it.timestamp }
                         Log.d("Diff", "${maxScanTime - minScanTime}")
-                        if (maxScanTime - minScanTime < 500_000) {
+                        Log.d("RECEIVED_RES", scanResults.toString())
+                        if (maxScanTime - minScanTime < 500_000_000) { //TODO
                             val resultList = scanResults.map { scanResult ->
                                 "${(minScanTime / 1000 + bootTime)} ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level}\n"
                             }
                             latestWifiScanResults = resultList
                             for (result in resultList) {
                                 wifiScanningResults.add(result)
-//                            Log.d("RECEIVED_RES", result)
+                                Log.d("RECEIVED_RES", result)
                             }
                         }
                     } else {
@@ -546,7 +547,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         SensorManager.getRotationMatrixFromVector(rotationMatrix, rotationVector)
         val orientations = FloatArray(3)
         SensorManager.getOrientation(rotationMatrix, orientations)
-        yaw = Math.toDegrees(orientations[0].toDouble()).toFloat()
+        yaw = Math.toDegrees(orientations[0].toDouble()).toFloat() + 90
         pitch = Math.toDegrees(orientations[1].toDouble()).toFloat()
         roll = Math.toDegrees(orientations[2].toDouble()).toFloat()
         eulerHistory.add(Triple(yaw, pitch, roll))

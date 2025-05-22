@@ -192,7 +192,6 @@ class TimerUtils(
                             wifiWriter.append(result)
                         }
                         wifiWriter.flush()
-                        wifiWriter.close()
                     } catch (e: IOException) {
                         e.printStackTrace()
                     }
