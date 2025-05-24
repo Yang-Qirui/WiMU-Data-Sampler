@@ -109,7 +109,7 @@ class ParticleFilter(numParticles: Int = 1000) {
         particles.addAll(newParticles)
     }
 
-    fun estimate(): FloatArray {
+    fun estimate(): Offset {
         var sumX = 0f
         var sumY = 0f
         var totalWeight = 0f
@@ -120,7 +120,7 @@ class ParticleFilter(numParticles: Int = 1000) {
             totalWeight += it.weight
         }
 
-        return if (totalWeight == 0f) floatArrayOf(0f, 0f)
-        else floatArrayOf(sumX / totalWeight, sumY / totalWeight)
+        return if (totalWeight == 0f) Offset(0f, 0f)
+        else Offset(sumX / totalWeight, sumY / totalWeight)
     }
 }
