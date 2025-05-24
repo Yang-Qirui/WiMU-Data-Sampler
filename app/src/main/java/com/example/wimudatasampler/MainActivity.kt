@@ -206,14 +206,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 //                sysNoise = 4f
                 inputImuOffset = Offset(0f, 0f)
             }
-            val response = if (!firstStart) {
-//                NetworkClient.fetchData(
-//                    url = url,
-//                    wifiResult = newValue,
-//                    imuInput = inputImuOffset,
-//                    sysNoise = sysNoise,
-//                    obsNoise = obsNoise
-//                )
+            if (!firstStart) {
                 filter.update(
                     observation = newValue,
                     systemInput = inputImuOffset,
@@ -226,7 +219,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                     obsNoiseScale = obsNoise
                 )
             }
-            val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
+            val coordinate = filter.estimate()
             Log.d("last pos", "${lastOffset.x}, ${lastOffset.y}")
             if (!firstStart && latestTimestamp != null && latestTimestamp - latestStepCount != 0) {
                 val delta = sqrt((inputImuOffset.x + lastOffset.x - coordinate.x).pow(2) + (inputImuOffset.y + lastOffset.y - coordinate.y).pow(2))
