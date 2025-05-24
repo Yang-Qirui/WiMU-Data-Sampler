@@ -1,5 +1,6 @@
 package com.example.wimudatasampler
 
+import ParticleFilter
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
@@ -168,7 +169,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     // The initial installation default value of the persistent variable
 
 //    private val filter = KalmanFilter(initialState, initialCovariance, matrixQ, fullMatrixR)
-
+    private val filter = ParticleFilter()
     @RequiresApi(Build.VERSION_CODES.Q)
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
@@ -206,22 +207,25 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                 inputImuOffset = Offset(0f, 0f)
             }
             val response = if (!firstStart) {
-                NetworkClient.fetchData(
-                    url = url,
-                    wifiResult = newValue,
-                    imuInput = inputImuOffset,
-                    sysNoise = sysNoise,
-                    obsNoise = obsNoise
+//                NetworkClient.fetchData(
+//                    url = url,
+//                    wifiResult = newValue,
+//                    imuInput = inputImuOffset,
+//                    sysNoise = sysNoise,
+//                    obsNoise = obsNoise
+//                )
+                filter.update(
+                    observation = newValue,
+                    systemInput = inputImuOffset,
+                    systemNoiseScale = sysNoise,
+                    obsNoiseScale = obsNoise
                 )
             } else {
-                NetworkClient.reset(
-                    url = url,
-                    wifiResult = newValue,
-                    sysNoise = sysNoise,
-                    obsNoise = obsNoise
+                filter.reset(
+                    initObservation = newValue,
+                    obsNoiseScale = obsNoise
                 )
             }
-            Log.d("current pos", response.bodyAsText())
             val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
             Log.d("last pos", "${lastOffset.x}, ${lastOffset.y}")
             if (!firstStart && latestTimestamp != null && latestTimestamp - latestStepCount != 0) {

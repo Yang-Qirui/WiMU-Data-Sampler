@@ -1,8 +1,9 @@
 import android.content.Context
+import androidx.compose.ui.geometry.Offset
 import kotlin.math.exp
 import kotlin.random.Random
 
-class ParticleFilter(context: Context, numParticles: Int = 1000) {
+class ParticleFilter(numParticles: Int = 1000) {
     private val particles = mutableListOf<Particle>()
     private var numParticles = numParticles
         set(value) {
@@ -43,22 +44,22 @@ class ParticleFilter(context: Context, numParticles: Int = 1000) {
     }
 
     fun update(
-        observation: FloatArray,
-        systemInput: FloatArray,
+        observation: Offset,
+        systemInput: Offset,
         systemNoiseScale: Float = 1f,
         obsNoiseScale: Float = 3f
     ) {
         // Prediction step
         particles.forEach {
-            it.x += systemInput[0] + Random.nextFloat() * systemNoiseScale
-            it.y += systemInput[1] + Random.nextFloat() * systemNoiseScale
+            it.x += systemInput.x + Random.nextFloat() * systemNoiseScale
+            it.y += systemInput.y + Random.nextFloat() * systemNoiseScale
         }
 
         // Update weights
         var totalWeight = 0f
         particles.forEach {
-            val dx = it.x - observation[0]
-            val dy = it.y - observation[1]
+            val dx = it.x - observation.x
+            val dy = it.y - observation.y
             val squaredDist = dx * dx + dy * dy
             it.weight = exp(-squaredDist / (2 * obsNoiseScale * obsNoiseScale)).toFloat()
             totalWeight += it.weight
