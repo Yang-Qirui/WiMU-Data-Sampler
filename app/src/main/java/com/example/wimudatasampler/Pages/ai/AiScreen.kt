@@ -44,7 +44,6 @@ fun AiScreen() {
         }
     }
 
-    // 初始化加载模型
     LaunchedEffect(Unit) {
         viewModel.loadModel(context)
     }
@@ -55,7 +54,6 @@ fun AiScreen() {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // 选择图片按钮
         Button(
             onClick = { imagePicker.launch("image/*") },
             enabled = !viewModel.processing
@@ -63,7 +61,6 @@ fun AiScreen() {
             Text("Select Image")
         }
 
-        // 显示图片
         viewModel.selectedImage?.let { bitmap ->
             Image(
                 bitmap = bitmap.asImageBitmap(),
@@ -75,7 +72,6 @@ fun AiScreen() {
                     .background(Color.LightGray)
             )
 
-            // 执行推理按钮
             Button(
                 onClick = { viewModel.runInference() },
                 enabled = !viewModel.processing
@@ -84,14 +80,13 @@ fun AiScreen() {
             }
         }
 
-        // 显示状态
         when {
             viewModel.processing -> CircularProgressIndicator(modifier = Modifier.padding(16.dp))
             viewModel.error != null -> Text(
                 text = "Error: ${viewModel.error}",
                 color = Color.Red,
                 modifier = Modifier.padding(8.dp))
-            !viewModel.result.isNullOrEmpty() -> Text(  // 更安全的空值检查
+            !viewModel.result.isNullOrEmpty() -> Text(
                 text = viewModel.result!!,
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier
