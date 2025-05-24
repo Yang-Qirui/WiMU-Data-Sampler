@@ -177,3 +177,4 @@ class CircularArray<T>(private val capacity: Int, private val allowOverwrite: Bo
 
     override fun toString(): String = toList().toString()
 }
+
