@@ -22,6 +22,7 @@ hiltNavigationCompose = "1.2.0"
 volley = "1.2.1"
 coil-compose = "2.7.0"
 exifinterface = "1.4.0"
+executorch = "0.6.0-rc1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -56,6 +57,9 @@ androidx-room-testing = { group = "androidx.room", name = "room-testing", versio
 androidx-compose-compiler = { group = "androidx.compose.compiler", name = "compiler", version.ref = "androidxComposeCompiler" }
 volley = { group = "com.android.volley", name = "volley", version.ref = "volley" }
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }
+
+# Pytorch
+executorch-android = { group = "org.pytorch", name = "executorch-android", version.ref = "executorch" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
