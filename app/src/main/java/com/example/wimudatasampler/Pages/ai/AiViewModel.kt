@@ -15,6 +15,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.io.files.FileNotFoundException
 import org.pytorch.executorch.EValue
 import org.pytorch.executorch.Module
 import org.pytorch.executorch.Tensor
@@ -160,15 +161,26 @@ class AiViewModel @Inject constructor(
 
     private fun loadApMapping(): Map<String, Int> {
         return try {
-            context.assets.open("ap_unions.json").use { inputStream ->
+            // 从新的存储路径读取文件
+            val file = File(context.getExternalFilesDir(null), "ap_unions.json")
+
+            if (!file.exists()) {
+                // 可选：如果文件不存在时从 assets 重新拷贝（根据需求决定）
+                context.copyAssetToFiles("ap_unions.json")
+            }
+
+            FileInputStream(file).use { inputStream ->
                 val reader = InputStreamReader(inputStream, StandardCharsets.UTF_8)
                 val type = object : TypeToken<Map<String, Int>>() {}.type
-                gson.fromJson<Map<String, Int>>(reader, type) // 过滤非Int值
-                    ?.mapValues { it.value}
+                gson.fromJson<Map<String, Int>>(reader, type)
+                    ?.filterValues { true } // 确保值类型为 Int
                     ?: emptyMap()
             }
+        } catch (e: FileNotFoundException) {
+            Log.e("FileLoader", "AP mapping file not found", e)
+            emptyMap()
         } catch (e: Exception) {
-            Log.e("AssetLoader", "Error loading AP mapping", e)
+            Log.e("FileLoader", "Error loading AP mapping", e)
             emptyMap()
         }
     }
