@@ -2,6 +2,7 @@ package com.example.wimudatasampler.utils
 
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.math.abs
+import kotlin.math.pow
 
 data class Quadruple<A, B, C, D> (
     val first: A,

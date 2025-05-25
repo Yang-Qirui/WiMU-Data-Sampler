@@ -17,7 +17,7 @@ import kotlinx.serialization.json.Json
 object NetworkClient {
     private val client = HttpClient(CIO)
 
-    private fun parseDataEntry(wifiInput: List<String>): List<DataEntry> {
+    fun parseDataEntry(wifiInput: List<String>): List<DataEntry> {
         val wifiEntries = mutableListOf<DataEntry>()
         for (line in wifiInput) {
             val indentLine = line.trimIndent()

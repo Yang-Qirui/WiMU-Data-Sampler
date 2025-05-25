@@ -97,7 +97,7 @@ dependencies {
     implementation(libs.hilt.navigation.compose)
 
     implementation(libs.executorch.android)
-
+    implementation(libs.gson)
     implementation("io.ktor:ktor-client-core:$ktor_version")
     implementation("io.ktor:ktor-client-cio:$ktor_version")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")

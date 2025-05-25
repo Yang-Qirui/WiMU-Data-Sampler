@@ -108,7 +108,7 @@ fun InferenceHorizontalPage(
     imageBitmap: ImageBitmap,
     selectedMap: MapModels.ImageMap
 ) {
-    val jDMode = true
+    val jDMode = false
     val scope = rememberCoroutineScope()
 
     // Map metadata

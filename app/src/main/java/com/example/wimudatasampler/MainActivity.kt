@@ -50,7 +50,6 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.example.wimudatasampler.DataClass.Coordinate
 import com.example.wimudatasampler.Pages.MainScreen
 import com.example.wimudatasampler.Pages.MapChoosingScreen
 import com.example.wimudatasampler.Pages.SettingScreen
@@ -65,11 +64,10 @@ import com.example.wimudatasampler.utils.TimerUtils
 import com.example.wimudatasampler.utils.UserPreferencesKeys
 import com.example.wimudatasampler.utils.lowPassFilter
 import com.example.wimudatasampler.utils.validPostureCheck
+import com.example.wimudatasampler.Pages.ai.AiViewModel
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import dagger.hilt.android.AndroidEntryPoint
-import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.*
-import kotlinx.serialization.json.Json
 import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -81,6 +79,7 @@ import kotlin.properties.Delegates
 class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
     private val mapViewModel: MapViewModel by viewModels()
+    private val aiViewModel: AiViewModel by viewModels()
 
     private lateinit var motionSensorManager: SensorUtils
     private lateinit var wifiManager: WifiManager
@@ -91,7 +90,6 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var rotationMatrix = FloatArray(9)
     private var lastStepCount: Float? = null
     private var lastStepCountFromMyStepDetector by mutableFloatStateOf(0f)
-    private var lastAcc: FloatArray? = null
     private var lastGravity = FloatArray(3)
     private var lastGeomagnetic = FloatArray(3)
     private var lastMag by mutableFloatStateOf(0f)
@@ -195,6 +193,8 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 //        for (item in imuOffsetHistory.list) {
 //            Log.d("item", item.toString())
 //        }
+        val wifiEntries = NetworkClient.parseDataEntry(newValue)
+        val wifiPrediction = aiViewModel.runInference(wifiEntries)
         val closestRecord = imuOffsetHistory.get(wifiTimestamp)
         val latestImuOffset = closestRecord?.second
         val latestTimestamp = closestRecord?.third
@@ -206,18 +206,20 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 //                sysNoise = 4f
                 inputImuOffset = Offset(0f, 0f)
             }
-            if (!firstStart) {
-                filter.update(
-                    observation = newValue,
-                    systemInput = inputImuOffset,
-                    systemNoiseScale = sysNoise,
-                    obsNoiseScale = obsNoise
-                )
-            } else {
-                filter.reset(
-                    initObservation = newValue,
-                    obsNoiseScale = obsNoise
-                )
+            if (wifiPrediction != null) {
+                if (!firstStart) {
+                    filter.update(
+                        observation = Offset(wifiPrediction[0], wifiPrediction[1]),
+                        systemInput = inputImuOffset,
+                        systemNoiseScale = sysNoise,
+                        obsNoiseScale = obsNoise
+                    )
+                } else {
+                    filter.reset(
+                        initObservation = floatArrayOf(wifiPrediction[0], wifiPrediction[1]),
+                        obsNoiseScale = obsNoise
+                    )
+                }
             }
             val coordinate = filter.estimate()
             Log.d("last pos", "${lastOffset.x}, ${lastOffset.y}")
@@ -263,6 +265,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         loadingStarted = true
         motionSensorManager.startMonitoring(this)
         startInference = true
+        aiViewModel.loadModel(this)
         scope.launch {
             while (true) {
                 val success = wifiManager.startScan()
