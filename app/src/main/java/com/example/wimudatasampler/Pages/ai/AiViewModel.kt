@@ -53,7 +53,7 @@ class AiViewModel @Inject constructor(
                 val modelPath = context.copyAssetToFiles("use.pte")
                 module = Module.load(modelPath)
                 apMapping = loadApMapping()
-                representationArray = readFloatArray(context.assets.open("representation.bin"))
+                representationArray = readFloatArray(FileInputStream(File(context.getExternalFilesDir(null), "representation.bin")))
                 normParams = loadNorm()
                 error = null
             } catch (e: Exception) {
@@ -187,7 +187,9 @@ class AiViewModel @Inject constructor(
 
     private fun loadNorm(): Map<String, Float> {
         return try {
-            context.assets.open("norm_params.json").use { inputStream ->
+
+            val file = File(context.getExternalFilesDir(null), "norm_params.json")
+            FileInputStream(file).use { inputStream ->
                 val reader = InputStreamReader(inputStream, StandardCharsets.UTF_8)
                 val type = object : TypeToken<Map<String, Float>>() {}.type
                 gson.fromJson<Map<String, Float>>(reader, type) // 过滤非Int值
