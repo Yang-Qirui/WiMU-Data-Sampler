@@ -51,8 +51,8 @@ class ParticleFilter(numParticles: Int = 1000) {
     ) {
         // Prediction step
         particles.forEach {
-            it.x += systemInput.x + Random.nextFloat() * systemNoiseScale
-            it.y += systemInput.y + Random.nextFloat() * systemNoiseScale
+            it.x = systemInput.x + Random.nextFloat() * systemNoiseScale
+            it.y = systemInput.y + Random.nextFloat() * systemNoiseScale
         }
 
         // Update weights

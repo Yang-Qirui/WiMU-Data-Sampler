@@ -48,7 +48,7 @@ class AiViewModel @Inject constructor(
     var representationArray: FloatArray? = null
 
     fun loadModel(context: Context) {
-        viewModelScope.launch(Dispatchers.IO) {
+//        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val modelPath = context.copyAssetToFiles("use.pte")
                 module = Module.load(modelPath)
@@ -59,7 +59,7 @@ class AiViewModel @Inject constructor(
             } catch (e: Exception) {
                 error = "Load failed: ${e.message}"
             }
-        }
+//        }
     }
 
     fun runInference(wifiEntries: List<DataEntry>): FloatArray? {
@@ -68,17 +68,19 @@ class AiViewModel @Inject constructor(
 
                 val input = preprocess(wifiEntries)
 
-                val  startTime = System.nanoTime()
-                val outputs = module?.forward(EValue.from(Tensor.fromBlob(input, longArrayOf(128)))) ?: throw Exception("Model not loaded")
+                val startTime = System.nanoTime()
+                val outputs =
+                    module?.forward(EValue.from(Tensor.fromBlob(input, longArrayOf(1, 128))))
+                        ?: throw Exception("Model not loaded")
                 val endTime = System.nanoTime()
                 error = null
 
                 return processOutput(outputs, endTime - startTime) // 传递时间参数
             } catch (e: Exception) {
                 error = "Inference failed: ${e.message}"
+           }
                 return null
-            }
-    }
+        }
 
     private fun preprocess(wifiEntries: List<DataEntry>): FloatArray? {
 
@@ -111,7 +113,7 @@ class AiViewModel @Inject constructor(
             val weight = 1f / (1 + LDPL(avgRssi, band))
             inputWeights[unionId] = weight.toFloat()
 
-            Log.d("Weight", "$unionId, $avgRssi, $band, $weight")
+//            Log.d("Weight", "$unionId, $avgRssi, $band, $weight")
         }
         val sumWeights = inputWeights.sum()
         if (sumWeights > 0) {

@@ -190,60 +190,77 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
     private suspend fun onLatestWifiResultChanged(newValue: List<String>) {
         val wifiTimestamp = newValue[0].trimIndent().split(" ")[0].toLong()
-//        for (item in imuOffsetHistory.list) {
-//            Log.d("item", item.toString())
-//        }
         val wifiEntries = NetworkClient.parseDataEntry(newValue)
-        val wifiPrediction = aiViewModel.runInference(wifiEntries)
-        val closestRecord = imuOffsetHistory.get(wifiTimestamp)
-        val latestImuOffset = closestRecord?.second
-        val latestTimestamp = closestRecord?.third
-        val latestValidation = closestRecord?.fourth
+        val startTime = System.nanoTime()
+        var wifiPrediction:FloatArray? = null
+        scope.launch(Dispatchers.IO) {
+            wifiPrediction = aiViewModel.runInference(wifiEntries)
+            val endTime = System.nanoTime()
+            val closestRecord = imuOffsetHistory.get(wifiTimestamp)
+            Log.d(
+                "WifiRecord",
+                "${wifiPrediction?.get(0)} ${wifiPrediction?.get(1)} ${endTime - startTime}"
+            )
+            Log.d("IMURecord", closestRecord.toString())
+            val latestImuOffset = closestRecord?.second
+            val latestTimestamp = closestRecord?.third
+            val latestValidation = closestRecord?.fourth
 //        Log.d("Last", latestImuOffset.toString())
-        try {
-            var inputImuOffset = latestImuOffset ?: Offset(0f, 0f)
-            if (lastMag > 80 || (latestValidation != null && !latestValidation)) {
+            try {
+                var inputImuOffset = latestImuOffset ?: Offset(0f, 0f)
+                if (lastMag > 80 || (latestValidation != null && !latestValidation)) {
 //                sysNoise = 4f
-                inputImuOffset = Offset(0f, 0f)
-            }
-            if (wifiPrediction != null) {
-                if (!firstStart) {
-                    filter.update(
-                        observation = Offset(wifiPrediction[0], wifiPrediction[1]),
-                        systemInput = inputImuOffset,
-                        systemNoiseScale = sysNoise,
-                        obsNoiseScale = obsNoise
-                    )
-                } else {
-                    filter.reset(
-                        initObservation = floatArrayOf(wifiPrediction[0], wifiPrediction[1]),
-                        obsNoiseScale = obsNoise
-                    )
+                    inputImuOffset = Offset(0f, 0f)
                 }
-            }
-            val coordinate = filter.estimate()
-            Log.d("last pos", "${lastOffset.x}, ${lastOffset.y}")
-            if (!firstStart && latestTimestamp != null && latestTimestamp - latestStepCount != 0) {
-                val delta = sqrt((inputImuOffset.x + lastOffset.x - coordinate.x).pow(2) + (inputImuOffset.y + lastOffset.y - coordinate.y).pow(2))
-                Log.d("Delta", "$delta, ${distFromLastPos + delta}")
+                if (wifiPrediction != null) {
+                    if (!firstStart && lastOffset != targetOffset) {
+                        filter.update(
+                            observation = Offset(wifiPrediction!![0], wifiPrediction!![1]),
+                            systemInput = targetOffset,
+                            systemNoiseScale = sysNoise,
+                            obsNoiseScale = obsNoise
+                        )
+                    } else {
+                        filter.reset(
+                            initObservation = floatArrayOf(
+                                wifiPrediction!![0],
+                                wifiPrediction!![1]
+                            ),
+                            obsNoiseScale = obsNoise
+                        )
+                    }
+                }
+                val coordinate = filter.estimate()
+                Log.d("Filter", coordinate.toString())
+                Log.d("last pos", "${lastOffset.x}, ${lastOffset.y}")
+                if (!firstStart && latestTimestamp != null && latestTimestamp - latestStepCount != 0) {
+                    val delta = sqrt(
+                        (inputImuOffset.x + lastOffset.x - coordinate.x).pow(2) + (inputImuOffset.y + lastOffset.y - coordinate.y).pow(
+                            2
+                        )
+                    )
+                    Log.d("Delta", "$delta, ${distFromLastPos + delta}")
 
-                val estimatedStride = (distFromLastPos + delta) / (latestTimestamp - latestStepCount)
-                Log.d("Est", estimatedStride.toString())
-                Log.d("Step diff", "${latestTimestamp - latestStepCount}")
-                latestStepCount = latestTimestamp
-                if (0.45 < estimatedStride && estimatedStride < 0.6) {
-                    stride = (1 - beta) * stride + beta * estimatedStride
+                    val estimatedStride =
+                        (distFromLastPos + delta) / (latestTimestamp - latestStepCount)
+                    Log.d("Est", estimatedStride.toString())
+                    Log.d("Step diff", "${latestTimestamp - latestStepCount}")
+                    latestStepCount = latestTimestamp
+                    if (0.45 < estimatedStride && estimatedStride < 0.6) {
+                        stride = (1 - beta) * stride + beta * estimatedStride
+                    }
+                    estimatedStrides.add(estimatedStride)
                 }
-                estimatedStrides.add(estimatedStride)
+                targetOffset = Offset(coordinate.x, coordinate.y)
+                lastOffset = Offset(coordinate.x, coordinate.y)
+                imuOffset = Offset(0f, 0f)
+                imuOffsetHistory.clear()
+                distFromLastPos = 0f
+                firstStart = false
+            } catch (e: Exception) {
+                e.printStackTrace()
+                e.printStackTrace()
             }
-            targetOffset = Offset(coordinate.x, coordinate.y)
-            lastOffset = Offset(coordinate.x, coordinate.y)
-            imuOffset = Offset(0f, 0f)
-            imuOffsetHistory.clear()
-            distFromLastPos = 0f
-            firstStart = false
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 
@@ -266,6 +283,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         motionSensorManager.startMonitoring(this)
         startInference = true
         aiViewModel.loadModel(this)
+        firstStart = true
         scope.launch {
             while (true) {
                 val success = wifiManager.startScan()
@@ -546,7 +564,6 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                             latestWifiScanResults = resultList
                             for (result in resultList) {
                                 wifiScanningResults.add(result)
-                                Log.d("RECEIVED_RES", result)
                             }
                         }
                     } else {
@@ -585,7 +602,8 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     override fun onSingleStepChanged() {
         if (!enableMyStepDetector) {
             stepCountHistory += 1
-//            Log.d("STEP COUNT", "$stepCountHistory, $stepCount, $lastStepCountFromMyStepDetector")
+            Log.d("STEP COUNT", "$stepCountHistory, $stepCount, $lastStepCountFromMyStepDetector")
+            
             if (imuOffset != null) {
                 val dx = -stride * cos(Math.toRadians(yaw.toDouble()).toFloat())
                 val dy = -stride * sin(Math.toRadians(yaw.toDouble()).toFloat())
@@ -593,7 +611,9 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                 val x = imuOffset!!.x + dx // north is negative axis
                 val y = imuOffset!!.y + dy
                 imuOffset = Offset(x, y)
+                Log.d("Check", "$startInference $enableImu ${validPostureCheck(pitch, roll)}")
                 if (startInference && enableImu && validPostureCheck(pitch, roll)) {
+                    Log.d("Put", imuOffset.toString())
                     imuOffsetHistory.put(
                         Quadruple(
                             System.currentTimeMillis(),
@@ -603,6 +623,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                         )
                     )
                     targetOffset = Offset(targetOffset.x + dx, targetOffset.y + dy)
+                    Log.d("IMU move", targetOffset.toString())
                 }
             }
         }
