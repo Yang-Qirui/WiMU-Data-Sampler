@@ -4,6 +4,7 @@ import android.util.Log
 import android.view.PixelCopy.Request
 import androidx.compose.ui.geometry.Offset
 import com.example.wimudatasampler.DataClass.DataEntry
+import com.example.wimudatasampler.DataClass.OneStepData
 import com.example.wimudatasampler.DataClass.RequestData
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -42,28 +43,41 @@ object NetworkClient {
 
     suspend fun fetchData(
         url: String,
+        timestamp: Long,
         wifiResult: List<String>,
-        imuInput: Offset,
         sysNoise: Float,
         obsNoise: Float
     ): HttpResponse {
         val wifiEntries = parseDataEntry(wifiResult)
-        val request = RequestData(wifiEntries, imuInput.x, imuInput.y, sysNoise, obsNoise)
-        return client.post(url + "/inference") {
+        val request = RequestData(timestamp, wifiEntries, sysNoise, obsNoise)
+        return client.post(url + "/inference2") {
             contentType(ContentType.Application.Json)
             setBody(Json.encodeToString(request))
         }
     }
 
-    suspend fun reset(
+//    suspend fun reset(
+//        url: String,
+//        wifiResult: List<String>,
+//        sysNoise: Float,
+//        obsNoise: Float
+//    ): HttpResponse {
+//        val wifiEntries = parseDataEntry(wifiResult)
+//        val request = RequestData(wifiEntries, null, null, sysNoise, obsNoise)
+//        return client.post(url + "/reset") {
+//            contentType(ContentType.Application.Json)
+//            setBody(Json.encodeToString(request))
+//        }
+//    }
+
+    suspend fun sendImu(
         url: String,
-        wifiResult: List<String>,
-        sysNoise: Float,
-        obsNoise: Float
+        timestamp: Long,
+        yaw: Float,
+        stride: Float
     ): HttpResponse {
-        val wifiEntries = parseDataEntry(wifiResult)
-        val request = RequestData(wifiEntries, null, null, sysNoise, obsNoise)
-        return client.post(url + "/reset") {
+        val request = OneStepData(timestamp, yaw, stride)
+        return client.post(url + "/sendimu") {
             contentType(ContentType.Application.Json)
             setBody(Json.encodeToString(request))
         }

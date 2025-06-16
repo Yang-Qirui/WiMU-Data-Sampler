@@ -14,9 +14,8 @@ data class DataEntry(
 
 @Serializable
 data class RequestData(
+    val timestamp: Long,
     val wifiEntries: List<DataEntry>,
-    val dx: Float?,
-    val dy: Float?,
     val system_noise_scale: Float,
     val obs_noise_scale: Float
 )
@@ -25,4 +24,11 @@ data class RequestData(
 data class Coordinate(
     val x: Float,
     val y: Float
+)
+
+@Serializable
+data class OneStepData(
+    val timestamp: Long,
+    val yaw: Float,
+    val stride: Float
 )

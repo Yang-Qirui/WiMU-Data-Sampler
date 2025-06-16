@@ -152,8 +152,6 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         doubleArrayOf(matrixR[0][0].pow(matrixRPowOne), matrixR[0][1]),
         doubleArrayOf(matrixR[1][0], matrixR[1][1].pow(matrixRPowTwo))
     )
-    private val userHeight = 1.7f
-    private val strideCoefficient = 0.414f
     private var estimatedStrideLength by mutableFloatStateOf(0f)
     private var estimatedStrides = mutableListOf<Float>()
 
@@ -161,7 +159,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
     private var obsNoise = 3f
     private var distFromLastPos = 0f
 
-    private var period = 5f
+    private var period = 3f
 
     private var url = "http://limcpu1.cse.ust.hk:7860"
     private var azimuthOffset = 90f
@@ -191,52 +189,30 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
     private suspend fun onLatestWifiResultChanged(newValue: List<String>) {
         val wifiTimestamp = newValue[0].trimIndent().split(" ")[0].toLong()
-//        for (item in imuOffsetHistory.list) {
-//            Log.d("item", item.toString())
-//        }
-        val closestRecord = imuOffsetHistory.get(wifiTimestamp)
-        val latestImuOffset = closestRecord?.second
-        val latestTimestamp = closestRecord?.third
-        val latestValidation = closestRecord?.fourth
-//        Log.d("Last", latestImuOffset.toString())
         try {
-            var inputImuOffset = latestImuOffset ?: Offset(0f, 0f)
-            if (lastMag > 80 || (latestValidation != null && !latestValidation)) {
-//                sysNoise = 4f
-                inputImuOffset = Offset(0f, 0f)
-            }
-            val response = if (!firstStart) {
-                NetworkClient.fetchData(
-                    url = url,
-                    wifiResult = newValue,
-                    imuInput = inputImuOffset,
-                    sysNoise = sysNoise,
-                    obsNoise = obsNoise
-                )
-            } else {
-                NetworkClient.reset(
-                    url = url,
-                    wifiResult = newValue,
-                    sysNoise = sysNoise,
-                    obsNoise = obsNoise
-                )
-            }
+            val response = NetworkClient.fetchData(
+                url = url,
+                timestamp = wifiTimestamp,
+                wifiResult = newValue,
+                sysNoise = sysNoise,
+                obsNoise = obsNoise
+            )
             Log.d("current pos", response.bodyAsText())
             val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
             Log.d("last pos", "${lastOffset.x}, ${lastOffset.y}")
-            if (!firstStart && latestTimestamp != null && latestTimestamp - latestStepCount != 0) {
-                val delta = sqrt((inputImuOffset.x + lastOffset.x - coordinate.x).pow(2) + (inputImuOffset.y + lastOffset.y - coordinate.y).pow(2))
-                Log.d("Delta", "$delta, ${distFromLastPos + delta}")
-
-                val estimatedStride = (distFromLastPos + delta) / (latestTimestamp - latestStepCount)
-                Log.d("Est", estimatedStride.toString())
-                Log.d("Step diff", "${latestTimestamp - latestStepCount}")
-                latestStepCount = latestTimestamp
-                if (0.45 < estimatedStride && estimatedStride < 0.6) {
-                    stride = (1 - beta) * stride + beta * estimatedStride
-                }
-                estimatedStrides.add(estimatedStride)
-            }
+//            if (!firstStart && latestTimestamp != null && latestTimestamp - latestStepCount != 0) {
+//                val delta = sqrt((inputImuOffset.x + lastOffset.x - coordinate.x).pow(2) + (inputImuOffset.y + lastOffset.y - coordinate.y).pow(2))
+//                Log.d("Delta", "$delta, ${distFromLastPos + delta}")
+//
+//                val estimatedStride = (distFromLastPos + delta) / (latestTimestamp - latestStepCount)
+//                Log.d("Est", estimatedStride.toString())
+//                Log.d("Step diff", "${latestTimestamp - latestStepCount}")
+//                latestStepCount = latestTimestamp
+//                if (0.45 < estimatedStride && estimatedStride < 0.6) {
+//                    stride = (1 - beta) * stride + beta * estimatedStride
+//                }
+//                estimatedStrides.add(estimatedStride)
+//            }
             targetOffset = Offset(coordinate.x, coordinate.y)
             lastOffset = Offset(coordinate.x, coordinate.y)
             imuOffset = Offset(0f, 0f)
@@ -533,6 +509,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                 if (success) {
                     Log.d("RECEIVED", "Received at ${SystemClock.elapsedRealtime()}")
                     val scanResults = wifiManager.scanResults
+                    Log.d("RECEIVED", "Received $scanResults")
                     if (scanResults.isNotEmpty()) {
                         val bootTime = System.currentTimeMillis() - SystemClock.elapsedRealtime()
                         val minScanTime = scanResults.minOf { it.timestamp }
@@ -574,15 +551,10 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
         pitch = Math.toDegrees(orientations[1].toDouble()).toFloat()
         roll = Math.toDegrees(orientations[2].toDouble()).toFloat()
         eulerHistory.add(Triple(yaw, pitch, roll))
-//        val recentInvalidCount = eulerHistory.checkAll()
-//        enableImu = if (recentInvalidCount / eulerHistory.getSize() > 0.6) {
-//            false
-//        } else {
-//            true
-//        }
     }
 
     override fun onSingleStepChanged() {
+        Log.d("SingleStep", "Triggered")
         if (!enableMyStepDetector) {
             stepCountHistory += 1
 //            Log.d("STEP COUNT", "$stepCountHistory, $stepCount, $lastStepCountFromMyStepDetector")
@@ -594,14 +566,22 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                 val y = imuOffset!!.y + dy
                 imuOffset = Offset(x, y)
                 if (startInference && enableImu && validPostureCheck(pitch, roll)) {
-                    imuOffsetHistory.put(
-                        Quadruple(
-                            System.currentTimeMillis(),
-                            imuOffset!!,
-                            stepCountHistory,
-                            validPostureCheck(pitch, roll)
+//                    imuOffsetHistory.put(
+//                        Quadruple(
+//                            System.currentTimeMillis(),
+//                            imuOffset!!,
+//                            stepCountHistory,
+//                            validPostureCheck(pitch, roll)
+//                        )
+//                    )
+                    scope.launch {
+                        NetworkClient.sendImu(
+                            url = url,
+                            timestamp = System.currentTimeMillis(),
+                            yaw = yaw,
+                            stride = stride
                         )
-                    )
+                    }
                     targetOffset = Offset(targetOffset.x + dx, targetOffset.y + dy)
                 }
             }
