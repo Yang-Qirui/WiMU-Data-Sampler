@@ -1,26 +1,34 @@
 package com.example.wimudatasampler.HorizontalPage
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.wifi.WifiManager
-import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,21 +38,31 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.example.wimudatasampler.MapViewModel
+import com.example.wimudatasampler.R
+import com.example.wimudatasampler.utils.ImageUtil.Companion.getImageFolderPath
 import com.example.wimudatasampler.utils.SensorUtils
 import com.example.wimudatasampler.utils.TimerUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
 
 @SuppressLint("DefaultLocale")
 @Composable
 fun SampleHorizontalPage(
+    mainContext: Context,
     context: SensorUtils.SensorDataListener,
+    mapViewModel: MapViewModel,
     sensorManager: SensorUtils,
     wifiManager: WifiManager,
     timer: TimerUtils,
@@ -82,11 +100,15 @@ fun SampleHorizontalPage(
     }
 
     var selectorExpanded by remember { mutableStateOf(false) }
+    var showMarkLabelsWindow by remember { mutableStateOf(false) }
     var selectedValue by remember { mutableStateOf("") }
+    val selectedMap by mapViewModel.selectedMap.collectAsState()
     val scope = CoroutineScope(Dispatchers.Main)
     Column {
         Column(
-            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -111,19 +133,80 @@ fun SampleHorizontalPage(
                 onDismissRequest = { selectorExpanded = false },
                 Modifier.fillMaxWidth()
             ) {
-                DropdownMenuItem(text = { Text("Unlabeled Data") }, onClick = {
-                    selectedValue = ""
-                    selectorExpanded = false
-                })
+                DropdownMenuItem(
+                    text = { Text("Unlabeled Data") },
+                    onClick = {
+                        selectedValue = ""
+                        selectorExpanded = false
+                    }
+                )
                 for ((index, waypoint) in waypoints.withIndex()) {
                     DropdownMenuItem(
                         text = { Text("Waypoint ${index + 1}: ${waypoint.x}, ${waypoint.y}") },
                         onClick = {
                             selectedValue = "${index + 1}"
                             selectorExpanded = false
-                        })
+                        }
+                    )
+                }
+                DropdownMenuItem(
+                    text = {
+                        Text(text = "ADD NEW POINT", color = MaterialTheme.colorScheme.tertiary)
+                    }, onClick = {
+                        showMarkLabelsWindow = true
+                    }
+                )
+            }
+
+            selectedMap?.let { map ->
+                val folderPath = getImageFolderPath(mainContext)
+                val fullPath = remember(map) { File(folderPath, map.content).absolutePath }
+
+                var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+                var isLoading by remember { mutableStateOf(false) }
+
+                LaunchedEffect(fullPath) {
+                    if (isLoading) return@LaunchedEffect
+                    isLoading = true
+                    val bitmap = withContext(Dispatchers.IO) {
+                        val options = BitmapFactory.Options().apply {
+                            inSampleSize = 1
+                            inPreferredConfig = Bitmap.Config.RGB_565
+                        }
+                        BitmapFactory.decodeFile(fullPath, options)
+                    }
+                    imageBitmap = bitmap?.asImageBitmap()
+                    isLoading = false
+                }
+
+                if (!isLoading) {
+                    imageBitmap?.let { bitmap ->
+                        if (showMarkLabelsWindow) {
+                            AlertDialog(
+                                modifier = Modifier.fillMaxSize(),
+                                onDismissRequest = { showMarkLabelsWindow = false },
+                                title = {},
+                                text = {
+                                    MarkLabelsWindow(
+                                        waypoints = waypoints,
+                                        imageBitmap = bitmap,
+                                        selectedMap = map,
+                                        onMarkAddFinishClicked = {
+                                            showMarkLabelsWindow = false
+                                        }
+                                    )
+                                },
+                                confirmButton = {
+                                    //NOTHING
+                                }
+                            )
+                        }
+                    } ?: ImageBitmap.imageResource(R.drawable.image_placeholder)
+                } else {
+                    CircularProgressIndicator()
                 }
             }
+
             Spacer(modifier = Modifier.height(16.dp))
             OutlinedTextField(
                 value = wifiFreq,
@@ -227,8 +310,7 @@ fun SampleHorizontalPage(
                                     waypointPosition
                                 )
                             }
-                        }
-                        else {
+                        } else {
                             scope.launch {
                                 timer.runWifiTaskAtFrequency(
                                     wifiManager,

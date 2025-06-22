@@ -310,7 +310,9 @@ fun AppHorizontalPager(
         when (page) {
             0 -> {
                 SampleHorizontalPage(
+                    mainContext = activityContext,
                     context = context,  // Pass the context
+                    mapViewModel = mapViewModel,
                     sensorManager = motionSensorManager,
                     wifiManager = wifiManager,
                     timer = timer,

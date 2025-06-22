@@ -651,7 +651,7 @@ private fun DrawScope.drawUserMarker(
     )
 }
 
-private fun DrawScope.drawWaypointMarker(
+fun DrawScope.drawWaypointMarker(
     jDMode: Boolean,
     position: Offset,
     scale: Float,
@@ -675,5 +675,234 @@ private fun DrawScope.drawWaypointMarker(
             20 / scale.dp.toPx()
         }
     )
+}
+
+
+@SuppressLint("UnrememberedMutableState")
+@Composable
+fun MarkLabelsWindow(
+    modifier: Modifier = Modifier,
+    waypoints: SnapshotStateList<Offset>,
+    imageBitmap: ImageBitmap,
+    selectedMap: MapModels.ImageMap,
+    onMarkAddFinishClicked: () -> Unit
+) {
+    val jDMode = false
+
+    // Map metadata
+    val mapWidthMeters = selectedMap.metersForMapWidth // Actual map width (m)
+    val mapWidthPixels = imageBitmap.width.toFloat()
+    val mapHeightPixels = imageBitmap.height.toFloat()
+
+    // Screen parameter
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    val canvasCenter by derivedStateOf {
+        Offset(
+            canvasSize.width / 2f,
+            canvasSize.height / 2f
+        )
+    }
+    val pixelsPerMeter = mapWidthPixels / mapWidthMeters
+    val metersPerPixel = mapWidthMeters / mapWidthPixels
+
+    val maoCenterPosOffsetMeters = Offset(
+        mapWidthPixels * metersPerPixel / 2f,
+        mapHeightPixels * metersPerPixel / 2f
+    )
+    // Transition state
+    var scale by remember { mutableFloatStateOf(2f) }
+    var gestureRotationDegrees by remember { mutableFloatStateOf(0f) }
+
+    var lastMarkScreenPos by remember {
+        mutableStateOf(
+            if (waypoints.isNotEmpty()) {
+                (maoCenterPosOffsetMeters + waypoints.last()) * pixelsPerMeter
+            } else {
+                (maoCenterPosOffsetMeters + Offset.Zero) * pixelsPerMeter
+            }
+        )
+    }
+
+    var translation by remember { mutableStateOf(Offset.Zero) }
+    val translationAnimation = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
+    val lastMarkPosAnimation = remember { Animatable(lastMarkScreenPos, Offset.VectorConverter) }
+
+    LaunchedEffect(canvasCenter) {
+        val targetTranslation = canvasCenter - lastMarkScreenPos
+        translationAnimation.animateTo(
+            targetValue = targetTranslation,
+            animationSpec = tween(1000, easing = FastOutSlowInEasing)
+        )
+    }
+
+    LaunchedEffect(waypoints) {
+        if (waypoints.isNotEmpty()) {
+            waypoints.last().let { newPos ->
+                lastMarkPosAnimation.animateTo(
+                    targetValue = (maoCenterPosOffsetMeters + newPos) * pixelsPerMeter,
+                    animationSpec = tween(500, easing = FastOutSlowInEasing)
+                )
+                val targetTranslation = canvasCenter - lastMarkScreenPos
+                translationAnimation.animateTo(
+                    targetValue = targetTranslation,
+                    animationSpec = tween(500, easing = FastOutSlowInEasing)
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(translationAnimation.value) {
+        translation = translationAnimation.value
+    }
+
+    LaunchedEffect(lastMarkPosAnimation.value) {
+        lastMarkScreenPos = lastMarkPosAnimation.value
+    }
+
+    Box(
+        modifier = modifier
+            .pointerInput(Unit) {
+                detectTransformGestures(
+                    panZoomLock = true,
+                    onGesture = { centroid, pan, zoom, rotate ->
+
+
+                        val newScale = (scale * zoom).coerceIn(0.2f, 5f)
+                        scale = newScale
+                        translation += pan
+                        gestureRotationDegrees += rotate
+
+
+                    }
+                )
+
+            }
+    ) {
+        val tertiaryContainerColor = MaterialTheme.colorScheme.tertiaryContainer
+        val onTertiaryContainerColor = MaterialTheme.colorScheme.onTertiaryContainer
+
+        // Map background
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+//                .background(color = Color(0xfffafafa))
+                .onGloballyPositioned { coordinates ->
+                    canvasSize = coordinates.size
+                }
+        ) {
+            withTransform({
+                translate(translation.x, translation.y)
+                scale(scale, scale, pivot = lastMarkScreenPos)
+                rotate(
+                    degrees = 0.0f,
+                    pivot = lastMarkScreenPos
+                )
+            }) {
+                drawImage(
+                    image = imageBitmap,
+                    srcOffset = IntOffset.Zero,
+                    srcSize = IntSize(imageBitmap.width, imageBitmap.height),
+                    dstSize = IntSize((mapWidthPixels).toInt(), (mapHeightPixels).toInt())
+                )
+
+                waypoints.forEachIndexed { index, waypoint ->
+                    val screenPos = (maoCenterPosOffsetMeters + waypoint) * pixelsPerMeter
+                    drawWaypointMarker(
+                        jDMode = jDMode,
+                        position = screenPos,
+                        scale = scale,
+                        centerColor = onTertiaryContainerColor,
+                        ringColor = tertiaryContainerColor,
+                    )
+
+                    drawContext.canvas.nativeCanvas.apply {
+                        val paint = android.graphics.Paint().apply {
+                            color = onTertiaryContainerColor.toArgb()
+                            textSize = if (jDMode) {
+                                30 / scale.sp.toPx()
+                            } else {
+                                140 / scale.sp.toPx()
+                            }
+                        }
+                        val num = index + 1
+                        drawText(
+                            "$num",
+                            screenPos.x + 20 / scale,
+                            screenPos.y + 20 / scale,
+                            paint
+                        )
+                    }
+                }
+            }
+        }
+
+        // Long press to add waypoints
+        var longPressPosition by remember { mutableStateOf<Offset?>(null) }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onLongPress = {
+                            longPressPosition = it
+                        }
+                    )
+                }
+        )
+
+        fun screenToMapCoordinates(screenPos: Offset): Offset {
+            // Backward translation
+            val afterTranslation = screenPos - translation
+            // Reverse scaling (consider reference points)
+            val scaledPos = (afterTranslation - lastMarkScreenPos) / scale + lastMarkScreenPos
+            // Reverse rotation (according to current mode)
+            val rotationAngle = 0.0f
+            val x = scaledPos.x - lastMarkScreenPos.x
+            val y = scaledPos.y - lastMarkScreenPos.y
+            val rotatedPos = Offset(
+                x * cos(rotationAngle) - y * sin(rotationAngle) + lastMarkScreenPos.x,
+                x * sin(rotationAngle) + y * cos(rotationAngle) + lastMarkScreenPos.y
+            )
+            // Convert to metric coordinates
+            return (rotatedPos) / pixelsPerMeter - maoCenterPosOffsetMeters
+        }
+
+        longPressPosition?.let { screenPos ->
+            Canvas(modifier = Modifier.size(24.dp)) {
+                drawWaypointMarker(
+                    jDMode = jDMode,
+                    position = screenPos,
+                    scale = 1.0f,
+                    centerColor = tertiaryContainerColor,
+                    ringColor = onTertiaryContainerColor,
+                )
+            }
+
+            FilledCardExample(
+                offset = screenPos,
+                showingOffset = screenToMapCoordinates(screenPos),
+                onConfirm = {
+                    waypoints.add(screenToMapCoordinates(screenPos))
+                    longPressPosition = null
+                },
+                onDismiss = { longPressPosition = null }
+            )
+        }
+
+        FloatingActionButton(
+            modifier = Modifier
+                .align(Alignment.BottomEnd),
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            onClick = {
+                onMarkAddFinishClicked()
+            }
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Check,
+                contentDescription = "Complete marking",
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
 }
 
