@@ -73,6 +73,7 @@ dependencies {
     implementation(libs.androidx.navigation)
     implementation(libs.volley)
     implementation(libs.androidx.exifinterface)
+    implementation(libs.androidx.lifecycle.service)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

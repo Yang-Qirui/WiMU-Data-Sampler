@@ -1,10 +1,8 @@
 package com.example.wimudatasampler.Pages
 
-import MyStepDetector
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.net.wifi.WifiManager
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -53,13 +51,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.navigation.NavController
 import com.example.wimudatasampler.HorizontalPage.InferenceHorizontalPage
-import com.example.wimudatasampler.HorizontalPage.SampleHorizontalPage
+import com.example.wimudatasampler.HorizontalPage.SamplingHorizontalPage
 import com.example.wimudatasampler.MapViewModel
 import com.example.wimudatasampler.R
 import com.example.wimudatasampler.navigation.MainActivityDestinations
 import com.example.wimudatasampler.utils.ImageUtil.Companion.getImageFolderPath
-import com.example.wimudatasampler.utils.SensorUtils
-import com.example.wimudatasampler.utils.TimerUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -68,43 +64,48 @@ import java.io.File
 @Composable
 fun MainScreen(
     modifier: Modifier = Modifier,
-    mainContext: Context,
-    mapViewModel: MapViewModel,
-    context: SensorUtils.SensorDataListener,
+    context: Context,
     navController: NavController,
-    motionSensorManager: SensorUtils,
-    wifiManager: WifiManager,
-    timer: TimerUtils,
-    setStartSamplingTime: (String) -> Unit,
-    yaw: Float,
-    pitch: Float,
-    roll: Float,
-    orientation: Float,
-    isMonitoringAngles: Boolean,
-    toggleMonitoringAngles: () -> Unit,
+    //ViewModel
+    mapViewModel: MapViewModel,
+    //UI State
+    jDMode: Boolean,
+    isSampling: Boolean,
+    isLocatingStarted: Boolean,
+    isLoadingStarted: Boolean,
+    isImuEnabled: Boolean,
+    isMyStepDetectorEnabled: Boolean,
+    //Sampling Data
+    yaw: Float?,
+    pitch: Float?,
+    roll: Float?,
+    numOfLabelSampling: Int?, // Start from 0
+    wifiScanningInfo: String?,
+    wifiSamplingCycles: Float,
+    sensorSamplingCycles: Float,
+    saveDirectory: String,
+    isCollectTraining: Boolean,
+    //Location Data
+    userPositionInMeters: Offset?, // User's physical location (in meters)
+    userHeading: Float?, // User orientation Angle (0-360)
     waypoints: SnapshotStateList<Offset>,
-    changeBeta: (Float) -> Unit,
-    getBeta: () -> Float,
-    targetOffset: Offset?,
-    navigationStarted: Boolean,
-    loadingStarted: Boolean,
-    enableImu: Boolean,
-    startFetching: () -> Unit,
-    endFetching: () -> Unit,
     imuOffset: Offset?,
-    wifiOffset: Offset?,
-    onRefreshButtonClicked: () ->Unit,
-    setNavigationStartFalse: () -> Unit,
-    setLoadingStartFalse: () -> Unit,
-    setEnableImu: (Boolean) -> Unit,
-    estimatedStride: Float,
-    accX: Float,
-    accY: Float,
-    accZ: Float,
-    stepFromMyDetector: Float,
-    setEnableMyStepDetector: (Boolean) -> Unit,
-    enableMyStepDetector: Boolean,
-    mag: Float
+    targetOffset: Offset?,
+    //Sampling Function
+    updateWifiSamplingCycles: (Float) -> Unit,
+    updateSensorSamplingCycles: (Float) -> Unit,
+    updateSaveDirectory: (String) -> Unit,
+    updateIsCollectTraining: (Boolean) -> Unit,
+    onStartSamplingButtonClicked: (labelData: Offset?, numOfLabelToSample: Int?, startScanningTime: Long) -> Unit,
+    onStopSamplingButtonClicked: () -> Unit,
+    //Inference Function
+    startLocating: () -> Unit,
+    endLocating: () -> Unit,
+    refreshLocation: () -> Unit,
+    enableImu: () -> Unit,
+    disableImu: () -> Unit,
+    enableMyStepDetector: () -> Unit,
+    disableMyStepDetector: () -> Unit
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -202,45 +203,51 @@ fun MainScreen(
             }
 
             AppHorizontalPager(
-                activityContext = mainContext,
-                mapViewModel = mapViewModel,
                 context = context,
+                //ViewModel
+                mapViewModel = mapViewModel,
+                //Page State
                 state = state,
                 pagerState = pagerState,
                 updateState = { state = pagerState.currentPage },
-                motionSensorManager = motionSensorManager,
-                wifiManager = wifiManager,
-                timer = timer,
-                setStartSamplingTime = setStartSamplingTime,
+                //UI State
+                jDMode = jDMode,
+                isSampling = isSampling,
+                isLocatingStarted = isLocatingStarted,
+                isLoadingStarted = isLoadingStarted,
+                isImuEnabled = isImuEnabled,
+                isMyStepDetectorEnabled = isMyStepDetectorEnabled,
+                //Sampling Data
                 yaw = yaw,
                 pitch = pitch,
                 roll = roll,
-                orientation = orientation,
-                isMonitoringAngles = isMonitoringAngles,
-                toggleMonitoringAngles = toggleMonitoringAngles,
+                numOfLabelSampling = numOfLabelSampling, // Start from 0
+                wifiScanningInfo = wifiScanningInfo,
+                wifiSamplingCycles = wifiSamplingCycles,
+                sensorSamplingCycles = sensorSamplingCycles,
+                saveDirectory = saveDirectory,
+                isCollectTraining = isCollectTraining,
+                //Location Data
+                userPositionInMeters = userPositionInMeters, // User's physical location (in meters)
+                userHeading = userHeading, // User orientation Angle (0-360)
                 waypoints = waypoints,
-                changeBeta = changeBeta,
-                getBeta = getBeta,
-                targetOffset = targetOffset,
-                startFetching = { startFetching() },
-                endFetching = { endFetching() },
                 imuOffset = imuOffset,
-                wifiOffset = wifiOffset,
-                navigationStarted = navigationStarted,
-                loadingStarted = loadingStarted,
+                targetOffset = targetOffset,
+                //Sampling Function
+                updateWifiSamplingCycles = updateWifiSamplingCycles,
+                updateSensorSamplingCycles = updateSensorSamplingCycles,
+                updateSaveDirectory = updateSaveDirectory,
+                updateIsCollectTraining = updateIsCollectTraining,
+                onStartSamplingButtonClicked = onStartSamplingButtonClicked,
+                onStopSamplingButtonClicked = onStopSamplingButtonClicked,
+                //Inference Function
+                startLocating = startLocating,
+                endLocating = endLocating,
+                refreshLocation = refreshLocation,
                 enableImu = enableImu,
-                onRefreshButtonClicked = onRefreshButtonClicked,
-                setNavigationStartFalse = setNavigationStartFalse,
-                setLoadingStartFalse = setLoadingStartFalse,
-                setEnableImu = setEnableImu,
-                estimatedStride = estimatedStride,
-                accX = accX,
-                accY = accY,
-                accZ = accZ,
-                stepFromMyDetector = stepFromMyDetector,
-                setEnableMyStepDetector = setEnableMyStepDetector,
+                disableImu = disableImu,
                 enableMyStepDetector = enableMyStepDetector,
-                mag = mag
+                disableMyStepDetector = disableMyStepDetector
             )
         }
     }
@@ -250,45 +257,51 @@ fun MainScreen(
 @Composable
 fun AppHorizontalPager(
     modifier: Modifier = Modifier,
-    activityContext : Context,
-    context: SensorUtils.SensorDataListener,
+    context: Context,
+    //ViewModel
     mapViewModel: MapViewModel,
+    //Page State
     state: Int,
     pagerState: PagerState,
-    updateState:()->Unit,
-    motionSensorManager: SensorUtils,
-    wifiManager: WifiManager,
-    timer: TimerUtils,
-    setStartSamplingTime: (String) -> Unit,
-    yaw: Float,
-    pitch: Float,
-    roll: Float,
-    orientation: Float,
-    isMonitoringAngles: Boolean,
-    toggleMonitoringAngles: () -> Unit,
+    updateState: () -> Unit,
+    //UI State
+    jDMode: Boolean,
+    isSampling: Boolean,
+    isLocatingStarted: Boolean,
+    isLoadingStarted: Boolean,
+    isImuEnabled: Boolean,
+    isMyStepDetectorEnabled: Boolean,
+    //Sampling Data
+    yaw: Float?,
+    pitch: Float?,
+    roll: Float?,
+    numOfLabelSampling: Int?, // Start from 0
+    wifiScanningInfo: String?,
+    wifiSamplingCycles: Float,
+    sensorSamplingCycles: Float,
+    saveDirectory: String,
+    isCollectTraining: Boolean,
+    //Location Data
+    userPositionInMeters: Offset?, // User's physical location (in meters)
+    userHeading: Float?, // User orientation Angle (0-360)
     waypoints: SnapshotStateList<Offset>,
-    changeBeta: (Float) -> Unit,
-    getBeta: () -> Float,
-    targetOffset: Offset?,
-    navigationStarted: Boolean,
-    loadingStarted: Boolean,
-    enableImu: Boolean,
-    startFetching: () -> Unit,
-    endFetching: () -> Unit,
     imuOffset: Offset?,
-    wifiOffset: Offset?,
-    onRefreshButtonClicked: () ->Unit,
-    setNavigationStartFalse: () -> Unit,
-    setLoadingStartFalse: () -> Unit,
-    setEnableImu: (Boolean) -> Unit,
-    setEnableMyStepDetector: (Boolean) -> Unit,
-    enableMyStepDetector: Boolean,
-    estimatedStride: Float,
-    accX: Float,
-    accY: Float,
-    accZ: Float,
-    stepFromMyDetector: Float,
-    mag: Float
+    targetOffset: Offset?,
+    //Sampling Function
+    updateWifiSamplingCycles: (Float) -> Unit,
+    updateSensorSamplingCycles: (Float) -> Unit,
+    updateSaveDirectory: (String) -> Unit,
+    updateIsCollectTraining: (Boolean) -> Unit,
+    onStartSamplingButtonClicked: (labelData: Offset?, numOfLabelToSample: Int?, startScanningTime: Long) -> Unit,
+    onStopSamplingButtonClicked: () -> Unit,
+    //Inference Function
+    startLocating: () -> Unit,
+    endLocating: () -> Unit,
+    refreshLocation: () -> Unit,
+    enableImu: () -> Unit,
+    disableImu: () -> Unit,
+    enableMyStepDetector: () -> Unit,
+    disableMyStepDetector: () -> Unit,
 ) {
     LaunchedEffect(state) {
         pagerState.scrollToPage(state)
@@ -309,31 +322,33 @@ fun AppHorizontalPager(
     ) { page ->
         when (page) {
             0 -> {
-                SampleHorizontalPage(
-                    mainContext = activityContext,
-                    context = context,  // Pass the context
+                SamplingHorizontalPage(
+                    context = context,
                     mapViewModel = mapViewModel,
-                    sensorManager = motionSensorManager,
-                    wifiManager = wifiManager,
-                    timer = timer,
-                    setStartSamplingTime = setStartSamplingTime,
-                    waypoints = waypoints,
-                    estimatedStride = estimatedStride,
-                    accX = accX,
-                    accY = accY,
-                    accZ = accZ,
-                    stepFromMyDetector = stepFromMyDetector,
+                    jDMode = jDMode,
+                    isSampling = isSampling,
                     yaw = yaw,
                     pitch = pitch,
                     roll = roll,
-                    orientation = orientation,
-                    mag = mag
+                    numOfLabelSampling = numOfLabelSampling,
+                    wifiScanningInfo = wifiScanningInfo,
+                    wifiSamplingCycles = wifiSamplingCycles,
+                    sensorSamplingCycles = sensorSamplingCycles,
+                    saveDirectory = saveDirectory,
+                    isCollectTraining = isCollectTraining,
+                    waypoints = waypoints,
+                    updateWifiSamplingCycles = updateWifiSamplingCycles,
+                    updateSensorSamplingCycles = updateSensorSamplingCycles,
+                    updateSaveDirectory = updateSaveDirectory,
+                    updateIsCollectTraining = updateIsCollectTraining,
+                    onStartSamplingButtonClicked = onStartSamplingButtonClicked,
+                    onStopSamplingButtonClicked = onStopSamplingButtonClicked
                 )
             }
 
             1 -> {
                 selectedMap?.let { map ->
-                    val folderPath = getImageFolderPath(activityContext)
+                    val folderPath = getImageFolderPath(context)
                     val fullPath = remember(map) { File(folderPath, map.content).absolutePath }
 
                     var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
@@ -356,26 +371,41 @@ fun AppHorizontalPager(
                     if (!isLoading) {
                         imageBitmap?.let { bitmap ->
                             InferenceHorizontalPage(
-                                context = activityContext,
-                                selectedMap = map,
-                                imageBitmap = bitmap,
-                                navigationStarted = navigationStarted,
-                                loadingStarted = loadingStarted,
-                                enableImu = enableImu,
-                                startFetching = startFetching,
-                                endFetching = endFetching,
-                                userPositionMeters = targetOffset,
-                                userHeading = yaw,
+                                context = context,
+                                jDMode = jDMode,
+                                isLocatingStarted = isLocatingStarted,
+                                isLoadingStarted = isLoadingStarted,
+                                isImuEnabled = isImuEnabled,
+                                isMyStepDetectorEnabled = isMyStepDetectorEnabled,
+                                userPositionInMeters = userPositionInMeters,
+                                userHeading = userHeading,
                                 waypoints = waypoints,
                                 imuOffset = imuOffset,
-                                wifiOffset = wifiOffset,
                                 targetOffset = targetOffset,
-                                onRefreshButtonClicked = onRefreshButtonClicked,
-                                setNavigationStartFalse = setNavigationStartFalse,
-                                setLoadingStartFalse = setLoadingStartFalse,
-                                setEnableImu = setEnableImu,
-                                setEnableMyStepDetector = setEnableMyStepDetector,
-                                enableMyStepDetector = enableMyStepDetector,
+                                setLocatingStartTo = { value ->
+                                    if (value) {
+                                        startLocating()
+                                    } else {
+                                        endLocating()
+                                    }
+                                },
+                                onRefreshButtonClicked = refreshLocation,
+                                setImuEnableStateTo = { value ->
+                                    if (value) {
+                                        enableImu()
+                                    } else {
+                                        disableImu()
+                                    }
+                                },
+                                setEnableMyStepDetector = { value ->
+                                    if (value) {
+                                        enableMyStepDetector()
+                                    } else {
+                                        disableMyStepDetector()
+                                    }
+                                },
+                                imageBitmap = bitmap,
+                                selectedMap = map
                             )
                         } ?: ImageBitmap.imageResource(R.drawable.image_placeholder)
                     } else {
@@ -383,16 +413,6 @@ fun AppHorizontalPager(
                     }
                 }
             }
-//            2 -> {
-//                TrackingHorizontalPage(
-//                    context = context,
-//                    waypoints = waypoints,
-//                    sensorManager = motionSensorManager,
-//                    wifiManager = wifiManager,
-//                    timer = timer
-//                )
-//            }
         }
-
     }
 }

@@ -1,10 +1,8 @@
 package com.example.wimudatasampler.HorizontalPage
 
 
-import MyStepDetector
 import android.annotation.SuppressLint
 import android.content.Context
-import android.widget.TextView
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.VectorConverter
@@ -26,7 +24,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.DoDisturb
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Navigation
 import androidx.compose.material.icons.outlined.Refresh
@@ -86,29 +83,29 @@ enum class NavUiMode(val value: Int) {
 @SuppressLint("UnrememberedMutableState")
 @Composable
 fun InferenceHorizontalPage(
-    context: Context,
-    navigationStarted: Boolean,
-    loadingStarted: Boolean,
-    enableImu: Boolean,
-    enableMyStepDetector: Boolean,
-    startFetching: () -> Unit,
-    endFetching: () -> Unit,
-    userPositionMeters: Offset?, // User's physical location (in meters)
-    userHeading: Float, // User orientation Angle (0-360)
-    waypoints: SnapshotStateList<Offset>,
     modifier: Modifier = Modifier,
+    context: Context,
+    //UI State
+    jDMode: Boolean,
+    isLocatingStarted: Boolean,
+    isLoadingStarted: Boolean,
+    isImuEnabled: Boolean,
+    isMyStepDetectorEnabled: Boolean,
+    //Location Data
+    userPositionInMeters: Offset?, // User's physical location (in meters)
+    userHeading: Float?, // User orientation Angle (0-360)
+    waypoints: SnapshotStateList<Offset>,
     imuOffset: Offset?,
-    wifiOffset: Offset?,
     targetOffset: Offset?,
+    //Button Action
+    setLocatingStartTo: (Boolean) -> Unit,
     onRefreshButtonClicked: () -> Unit,
-    setNavigationStartFalse: () -> Unit,
-    setLoadingStartFalse: () -> Unit,
-    setEnableImu: (Boolean) -> Unit,
+    setImuEnableStateTo: (Boolean) -> Unit,
     setEnableMyStepDetector: (Boolean) -> Unit,
+    //MapToShow
     imageBitmap: ImageBitmap,
     selectedMap: MapModels.ImageMap
 ) {
-    val jDMode = false
     val scope = rememberCoroutineScope()
 
     // Map metadata
@@ -142,8 +139,8 @@ fun InferenceHorizontalPage(
 
     var userScreenPos by remember {
         mutableStateOf(
-            if (userPositionMeters != null) {
-                (userPosOffsetMeters + userPositionMeters) * pixelsPerMeter
+            if (userPositionInMeters != null) {
+                (userPosOffsetMeters + userPositionInMeters) * pixelsPerMeter
             } else {
                 Offset.Zero
             }
@@ -164,8 +161,8 @@ fun InferenceHorizontalPage(
         )
     }
 
-    LaunchedEffect(userPositionMeters) {
-        userPositionMeters?.let { newPos ->
+    LaunchedEffect(userPositionInMeters) {
+        userPositionInMeters?.let { newPos ->
             userPosAnimation.animateTo(
                 targetValue = (userPosOffsetMeters + newPos) * pixelsPerMeter,
                 animationSpec = tween(500, easing = FastOutSlowInEasing)
@@ -242,7 +239,7 @@ fun InferenceHorizontalPage(
                 scale(scale, scale, pivot = userScreenPos)
                 rotate(
                     if (uiMode == NavUiMode.USER_POS_FIX_CENTER_DIR_FIX_UP.value
-                    ) (-userHeading + 90) else 0.0f,
+                    ) (-(userHeading ?: 0.0F) + 90) else 0.0f,
                     pivot = userScreenPos
                 )
             }) {
@@ -258,7 +255,7 @@ fun InferenceHorizontalPage(
                     drawUserMarker(
                         jDMode = jDMode,
                         position = userScreenPos,
-                        headingDegrees = userHeading,
+                        headingDegrees = userHeading ?: 0.0F,
                         scale = scale,
                         mainColor = onSecondaryContainerColor,
                         secondColor = secondaryContainerColor
@@ -268,14 +265,14 @@ fun InferenceHorizontalPage(
                     drawUserMarker(
                         jDMode = jDMode,
                         position = userScreenPos,
-                        headingDegrees = userHeading,
+                        headingDegrees = userHeading ?: 0.0F,
                         scale = scale,
                         mainColor = onSecondaryContainerColor,
                         secondColor = secondaryContainerColor
                     )
                 }
 
-                waypoints.forEachIndexed { index, waypoint ->
+                waypoints?.forEachIndexed { index, waypoint ->
                     val screenPos = (userPosOffsetMeters + waypoint) * pixelsPerMeter
                     drawWaypointMarker(
                         jDMode = jDMode,
@@ -327,7 +324,7 @@ fun InferenceHorizontalPage(
             val scaledPos = (afterTranslation - userScreenPos) / scale + userScreenPos
             // Reverse rotation (according to current mode)
             val rotationAngle = if (uiMode == NavUiMode.USER_POS_FIX_CENTER_DIR_FIX_UP.value) {
-                -Math.toRadians((-userHeading + 90).toDouble()).toFloat()
+                -Math.toRadians((-(userHeading ?: 0.0F) + 90).toDouble()).toFloat()
             } else {
                 0.0f
             }
@@ -356,7 +353,7 @@ fun InferenceHorizontalPage(
                 offset = screenPos,
                 showingOffset = screenToMapCoordinates(screenPos),
                 onConfirm = {
-                    waypoints.add(screenToMapCoordinates(screenPos))
+                    waypoints?.add(screenToMapCoordinates(screenPos))
                     longPressPosition = null
                 },
                 onDismiss = { longPressPosition = null }
@@ -376,8 +373,8 @@ fun InferenceHorizontalPage(
                     )
                     .padding(vertical = 4.dp, horizontal = 8.dp),
                 text = when {
-                    !navigationStarted -> "Ready to go"
-                    else -> "yaw ${userHeading.roundToInt()}, imu (${imuOffset?.x?.roundToInt()}, ${imuOffset?.y?.roundToInt()}), pred (${targetOffset?.x?.roundToInt()}, ${targetOffset?.y?.roundToInt()})"
+                    !isLocatingStarted -> "Ready to go"
+                    else -> "yaw ${(userHeading ?: 0.0F).roundToInt()}, imu (${imuOffset?.x?.roundToInt()}, ${imuOffset?.y?.roundToInt()}), pred (${targetOffset?.x?.roundToInt()}, ${targetOffset?.y?.roundToInt()})"
                 },
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
@@ -406,13 +403,13 @@ fun InferenceHorizontalPage(
                         top = 20.dp,
                         bottom = 20.dp
                     ),
-                containerColor = if (enableMyStepDetector) {
+                containerColor = if (isMyStepDetectorEnabled) {
                     colorResource(id = R.color.button_container_green)
                 } else {
                     MaterialTheme.colorScheme.errorContainer
                 },
                 onClick = {
-                    setEnableMyStepDetector(!enableMyStepDetector)
+                    setEnableMyStepDetector(!isMyStepDetectorEnabled)
                 }
             ) {
                 Text(
@@ -428,13 +425,13 @@ fun InferenceHorizontalPage(
                         top = 20.dp,
                         bottom = 20.dp
                     ),
-                containerColor = if (enableImu) {
+                containerColor = if (isImuEnabled) {
                     colorResource(id = R.color.button_container_green)
                 } else {
                     MaterialTheme.colorScheme.errorContainer
                 },
                 onClick = {
-                    setEnableImu(!enableImu)
+                    setImuEnableStateTo(!isImuEnabled)
                 }
             ) {
                 Text("IMU")
@@ -450,45 +447,51 @@ fun InferenceHorizontalPage(
                         bottom = 20.dp,
                     ),
                 containerColor =
-                if (!navigationStarted && loadingStarted) {
-                    colorResource(id = R.color.button_container_green)
-                } else if (navigationStarted && !loadingStarted){
+                if (isLoadingStarted) {
                     MaterialTheme.colorScheme.errorContainer
                 } else {
-                    MaterialTheme.colorScheme.primaryContainer
+                    if (isLocatingStarted) {
+                        colorResource(id = R.color.button_container_green)
+                    } else {
+                        MaterialTheme.colorScheme.primaryContainer
+                    }
                 },
                 onClick = {
-                    if (!navigationStarted && !loadingStarted) {
-                        startFetching()
-                    } else if (navigationStarted && !loadingStarted) {
-                        endFetching()
-                        setNavigationStartFalse()
-                        setLoadingStartFalse()
+                    if (isLoadingStarted) {
+                        setLocatingStartTo(false)
+                    } else {
+                        if (isLocatingStarted) {
+                            //NOTHING
+                        } else {
+                            setLocatingStartTo(true)
+                        }
                     }
                 }
             ) {
-                if (!navigationStarted && !loadingStarted) {
-                    Icon(
-                        Icons.Outlined.Navigation,
-                        contentDescription = "Navigation",
-                    )
-                } else if (!navigationStarted && loadingStarted){
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = colorResource(id = R.color.button_content_green),
-                        strokeWidth = 3.dp
-                    )
-                } else if (navigationStarted && !loadingStarted) {
+                if (isLoadingStarted) {
                     Icon(
                         Icons.Outlined.Cancel,
                         contentDescription = "Stop navigation",
                         tint = MaterialTheme.colorScheme.error
                     )
+                } else {
+                    if (isLocatingStarted) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = colorResource(id = R.color.button_content_green),
+                            strokeWidth = 3.dp
+                        )
+                    } else {
+                        Icon(
+                            Icons.Outlined.Navigation,
+                            contentDescription = "Navigation",
+                        )
+                    }
                 }
             }
         }
 
-        if (navigationStarted && !loadingStarted) {
+        if (isLocatingStarted && !isLoadingStarted) {
             FloatingActionButton(
                 modifier = Modifier
                     .padding(
@@ -553,9 +556,7 @@ fun InferenceHorizontalPage(
                                 showUiModeDialog = false
                             }
                         )
-                        Text(
-                            text = "Marker pos fix and dir free"
-                        )
+                        Text(text = "Marker pos fix and dir free")
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -587,7 +588,7 @@ private fun DrawScope.drawUserMarker(
     position: Offset,
     headingDegrees: Float,
     scale: Float,
-    mainColor:Color,
+    mainColor: Color,
     secondColor: Color
 ) {
     val centerX = position.x
@@ -676,233 +677,3 @@ fun DrawScope.drawWaypointMarker(
         }
     )
 }
-
-
-@SuppressLint("UnrememberedMutableState")
-@Composable
-fun MarkLabelsWindow(
-    modifier: Modifier = Modifier,
-    waypoints: SnapshotStateList<Offset>,
-    imageBitmap: ImageBitmap,
-    selectedMap: MapModels.ImageMap,
-    onMarkAddFinishClicked: () -> Unit
-) {
-    val jDMode = false
-
-    // Map metadata
-    val mapWidthMeters = selectedMap.metersForMapWidth // Actual map width (m)
-    val mapWidthPixels = imageBitmap.width.toFloat()
-    val mapHeightPixels = imageBitmap.height.toFloat()
-
-    // Screen parameter
-    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
-    val canvasCenter by derivedStateOf {
-        Offset(
-            canvasSize.width / 2f,
-            canvasSize.height / 2f
-        )
-    }
-    val pixelsPerMeter = mapWidthPixels / mapWidthMeters
-    val metersPerPixel = mapWidthMeters / mapWidthPixels
-
-    val maoCenterPosOffsetMeters = Offset(
-        mapWidthPixels * metersPerPixel / 2f,
-        mapHeightPixels * metersPerPixel / 2f
-    )
-    // Transition state
-    var scale by remember { mutableFloatStateOf(2f) }
-    var gestureRotationDegrees by remember { mutableFloatStateOf(0f) }
-
-    var lastMarkScreenPos by remember {
-        mutableStateOf(
-            if (waypoints.isNotEmpty()) {
-                (maoCenterPosOffsetMeters + waypoints.last()) * pixelsPerMeter
-            } else {
-                (maoCenterPosOffsetMeters + Offset.Zero) * pixelsPerMeter
-            }
-        )
-    }
-
-    var translation by remember { mutableStateOf(Offset.Zero) }
-    val translationAnimation = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
-    val lastMarkPosAnimation = remember { Animatable(lastMarkScreenPos, Offset.VectorConverter) }
-
-    LaunchedEffect(canvasCenter) {
-        val targetTranslation = canvasCenter - lastMarkScreenPos
-        translationAnimation.animateTo(
-            targetValue = targetTranslation,
-            animationSpec = tween(1000, easing = FastOutSlowInEasing)
-        )
-    }
-
-    LaunchedEffect(waypoints) {
-        if (waypoints.isNotEmpty()) {
-            waypoints.last().let { newPos ->
-                lastMarkPosAnimation.animateTo(
-                    targetValue = (maoCenterPosOffsetMeters + newPos) * pixelsPerMeter,
-                    animationSpec = tween(500, easing = FastOutSlowInEasing)
-                )
-                val targetTranslation = canvasCenter - lastMarkScreenPos
-                translationAnimation.animateTo(
-                    targetValue = targetTranslation,
-                    animationSpec = tween(500, easing = FastOutSlowInEasing)
-                )
-            }
-        }
-    }
-
-    LaunchedEffect(translationAnimation.value) {
-        translation = translationAnimation.value
-    }
-
-    LaunchedEffect(lastMarkPosAnimation.value) {
-        lastMarkScreenPos = lastMarkPosAnimation.value
-    }
-
-    Box(
-        modifier = modifier
-            .pointerInput(Unit) {
-                detectTransformGestures(
-                    panZoomLock = true,
-                    onGesture = { centroid, pan, zoom, rotate ->
-
-
-                        val newScale = (scale * zoom).coerceIn(0.2f, 5f)
-                        scale = newScale
-                        translation += pan
-                        gestureRotationDegrees += rotate
-
-
-                    }
-                )
-
-            }
-    ) {
-        val tertiaryContainerColor = MaterialTheme.colorScheme.tertiaryContainer
-        val onTertiaryContainerColor = MaterialTheme.colorScheme.onTertiaryContainer
-
-        // Map background
-        Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-//                .background(color = Color(0xfffafafa))
-                .onGloballyPositioned { coordinates ->
-                    canvasSize = coordinates.size
-                }
-        ) {
-            withTransform({
-                translate(translation.x, translation.y)
-                scale(scale, scale, pivot = lastMarkScreenPos)
-                rotate(
-                    degrees = 0.0f,
-                    pivot = lastMarkScreenPos
-                )
-            }) {
-                drawImage(
-                    image = imageBitmap,
-                    srcOffset = IntOffset.Zero,
-                    srcSize = IntSize(imageBitmap.width, imageBitmap.height),
-                    dstSize = IntSize((mapWidthPixels).toInt(), (mapHeightPixels).toInt())
-                )
-
-                waypoints.forEachIndexed { index, waypoint ->
-                    val screenPos = (maoCenterPosOffsetMeters + waypoint) * pixelsPerMeter
-                    drawWaypointMarker(
-                        jDMode = jDMode,
-                        position = screenPos,
-                        scale = scale,
-                        centerColor = onTertiaryContainerColor,
-                        ringColor = tertiaryContainerColor,
-                    )
-
-                    drawContext.canvas.nativeCanvas.apply {
-                        val paint = android.graphics.Paint().apply {
-                            color = onTertiaryContainerColor.toArgb()
-                            textSize = if (jDMode) {
-                                30 / scale.sp.toPx()
-                            } else {
-                                140 / scale.sp.toPx()
-                            }
-                        }
-                        val num = index + 1
-                        drawText(
-                            "$num",
-                            screenPos.x + 20 / scale,
-                            screenPos.y + 20 / scale,
-                            paint
-                        )
-                    }
-                }
-            }
-        }
-
-        // Long press to add waypoints
-        var longPressPosition by remember { mutableStateOf<Offset?>(null) }
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onLongPress = {
-                            longPressPosition = it
-                        }
-                    )
-                }
-        )
-
-        fun screenToMapCoordinates(screenPos: Offset): Offset {
-            // Backward translation
-            val afterTranslation = screenPos - translation
-            // Reverse scaling (consider reference points)
-            val scaledPos = (afterTranslation - lastMarkScreenPos) / scale + lastMarkScreenPos
-            // Reverse rotation (according to current mode)
-            val rotationAngle = 0.0f
-            val x = scaledPos.x - lastMarkScreenPos.x
-            val y = scaledPos.y - lastMarkScreenPos.y
-            val rotatedPos = Offset(
-                x * cos(rotationAngle) - y * sin(rotationAngle) + lastMarkScreenPos.x,
-                x * sin(rotationAngle) + y * cos(rotationAngle) + lastMarkScreenPos.y
-            )
-            // Convert to metric coordinates
-            return (rotatedPos) / pixelsPerMeter - maoCenterPosOffsetMeters
-        }
-
-        longPressPosition?.let { screenPos ->
-            Canvas(modifier = Modifier.size(24.dp)) {
-                drawWaypointMarker(
-                    jDMode = jDMode,
-                    position = screenPos,
-                    scale = 1.0f,
-                    centerColor = tertiaryContainerColor,
-                    ringColor = onTertiaryContainerColor,
-                )
-            }
-
-            FilledCardExample(
-                offset = screenPos,
-                showingOffset = screenToMapCoordinates(screenPos),
-                onConfirm = {
-                    waypoints.add(screenToMapCoordinates(screenPos))
-                    longPressPosition = null
-                },
-                onDismiss = { longPressPosition = null }
-            )
-        }
-
-        FloatingActionButton(
-            modifier = Modifier
-                .align(Alignment.BottomEnd),
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            onClick = {
-                onMarkAddFinishClicked()
-            }
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Check,
-                contentDescription = "Complete marking",
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
-    }
-}
-

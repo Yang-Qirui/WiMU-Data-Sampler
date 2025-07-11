@@ -409,7 +409,7 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
                     ) {
                         composable(MainActivityDestinations.Main.route) {
                             MainScreen(
-                                mainContext = this@MainActivity,
+                                context = this@MainActivity,
                                 context = this@MainActivity,
                                 navController = navController,
                                 mapViewModel = mapViewModel,
@@ -636,7 +636,6 @@ class MainActivity : ComponentActivity(), SensorUtils.SensorDataListener {
 
     override fun onStepCountChanged(stepCount: Float) {
         lastStepCount = stepCount
-        this.stepCount = stepCount  // 更新步数值
         showStepCountDialog = true  // 显示弹窗
     }
 
