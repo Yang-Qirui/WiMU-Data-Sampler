@@ -32,7 +32,7 @@
         android:theme="@style/Theme.WiMUDataSampler"
         tools:targetApi="31">
         <activity
-            android:name=".NewMainActivity"
+            android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.WiMUDataSampler">
             <intent-filter>

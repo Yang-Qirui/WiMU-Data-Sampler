@@ -38,7 +38,7 @@ import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
-class NewMainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity() {
 
     private val mapViewModel: MapViewModel by viewModels()
 
@@ -84,15 +84,12 @@ class NewMainActivity : ComponentActivity() {
                 // 用户拒绝了关键权限，不能启动服务
                 Log.e("Permission", "Location permission denied. Cannot start service.")
                 Toast.makeText(this, "Location permission is required to run the service.", Toast.LENGTH_LONG).show()
-                // 你也可以在这里选择关闭应用或显示一个错误页面
             }
         }
 
-    private var currentRequestedPermission: String? = null
-
     @RequiresApi(Build.VERSION_CODES.O)
     private fun requestRequiredPermissions() {
-        // 创建一个基础权限列表
+        // 基础权限列表
         val requiredPermissions = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
@@ -247,7 +244,7 @@ class NewMainActivity : ComponentActivity() {
                     ) {
                         composable(MainActivityDestinations.Main.route) {
                             MainScreen(
-                                context = this@NewMainActivity,
+                                context = this@MainActivity,
                                 navController = navController,
                                 //ViewModel
                                 mapViewModel = mapViewModel,
@@ -338,7 +335,7 @@ class NewMainActivity : ComponentActivity() {
                         composable(MainActivityDestinations.Settings.route) {
                             frontService?.let { service ->
                                 SettingScreen(
-                                    context = this@NewMainActivity,
+                                    context = this@MainActivity,
                                     navController = navController,
                                     stride = service.stride,
                                     beta = service.beta,
@@ -400,7 +397,7 @@ class NewMainActivity : ComponentActivity() {
                         }
                         composable(MainActivityDestinations.MapChoosing.route) {
                             MapChoosingScreen(
-                                context = this@NewMainActivity,
+                                context = this@MainActivity,
                                 navController = navController,
                                 mapViewModel = mapViewModel
                             )
