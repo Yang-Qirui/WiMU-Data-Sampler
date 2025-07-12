@@ -166,7 +166,7 @@ fun InferenceHorizontalPage(
                 animationSpec = tween(500, easing = FastOutSlowInEasing)
             )
             if (uiMode != NavUiMode.USER_POS_FREE_CENTER_DIR_FREE.value) {
-                val targetTranslation = - canvasCenter + userScreenPos
+                val targetTranslation = canvasCenter - userScreenPos
                 translationAnimation.animateTo(
                     targetValue = targetTranslation,
                     animationSpec = tween(500, easing = FastOutSlowInEasing)

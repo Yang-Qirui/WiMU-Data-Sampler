@@ -79,7 +79,7 @@ data class ServiceState(
 
 class FrontService : Service(), SensorUtils.SensorDataListener {
 
-    lateinit var motionSensorManager: SensorUtils
+    private lateinit var motionSensorManager: SensorUtils
     lateinit var wifiManager: WifiManager
     private lateinit var wifiScanReceiver: BroadcastReceiver
     private lateinit var timer: TimerUtils
@@ -87,6 +87,10 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
     // Coroutine Scope for the service
     private val serviceJob = Job()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
+    private val samplingServiceJob = Job()
+    private val samplingServiceScope = CoroutineScope(Dispatchers.IO + samplingServiceJob)
+    private val locatingServiceJob = Job()
+    private val locatingServiceScope = CoroutineScope(Dispatchers.IO + locatingServiceJob)
 
     // StateFlow to communicate with the UI (Activity)
     private val _serviceState = MutableStateFlow(ServiceState())
@@ -256,8 +260,8 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
                                 "${(minScanTime / 1000 + bootTime)} ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level}\n"
                             }
                             latestWifiScanResults = resultList
-                            if (isServiceRunning) {
-                                serviceScope.launch { onLatestWifiResultChanged(resultList) }
+                            if (_serviceState.value.isLocatingStarted) {
+                                locatingServiceScope.launch { onLatestWifiResultChanged(resultList) }
                             }
                         }
                     } else {
@@ -269,7 +273,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
         val intentFilter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
         registerReceiver(wifiScanReceiver, intentFilter)
 
-        timer = TimerUtils(serviceScope, {wifiScanningResults}, {wifiScanningResults.clear()}, { wifiManager.startScan() }, this@FrontService)
+        timer = TimerUtils(samplingServiceScope, {wifiScanningResults}, {wifiScanningResults.clear()}, { wifiManager.startScan() }, this@FrontService)
         motionSensorManager = SensorUtils(this@FrontService)
         motionSensorManager.startMonitoring(this@FrontService)
     }
@@ -277,8 +281,13 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
     override fun onDestroy() {
         super.onDestroy()
         stopLocating()
+        stopCollectingData()
+        motionSensorManager.stopMonitoring()
+        timer.stopTask()
         unregisterReceiver(wifiScanReceiver)
         serviceJob.cancel()
+        samplingServiceJob.cancel()
+        locatingServiceJob.cancel()
         isServiceRunning = false
     }
 
@@ -336,6 +345,8 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
         }
 
         serviceJob.cancelChildren() // Cancel all coroutines
+        samplingServiceJob.cancelChildren()
+        locatingServiceJob.cancelChildren()
         isServiceRunning = false
         stopForeground(true)
         stopSelf()
@@ -368,7 +379,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
                 startTimestamp
             )
         _serviceState.value.saveDirectory = "Waypoint-${indexOfLabel + 1}-$currentTimeInText"
-        serviceScope.launch {
+        samplingServiceScope.launch {
             timer.runSensorTaskAtFrequency(
                 sensorManager = motionSensorManager,
                 frequency = _serviceState.value.sensorSamplingCycles.toDouble(),
@@ -376,7 +387,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
                 dirName = _serviceState.value.saveDirectory,
             )
         }
-        serviceScope.launch {
+        samplingServiceScope.launch {
             timer.runWifiTaskAtFrequency(
                 wifiManager = wifiManager,
                 frequencyY = _serviceState.value.wifiSamplingCycles.toDouble(),
@@ -397,7 +408,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
                 startTimestamp
             )
         _serviceState.value.saveDirectory = "Trajectory-$currentTimeInText"
-        serviceScope.launch {
+        samplingServiceScope.launch {
             timer.runSensorTaskAtFrequency(
                 sensorManager = motionSensorManager,
                 frequency = _serviceState.value.sensorSamplingCycles.toDouble(),
@@ -405,7 +416,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
                 dirName = _serviceState.value.saveDirectory,
             )
         }
-        serviceScope.launch {
+        samplingServiceScope.launch {
             timer.runWifiTaskAtFrequency(
                 wifiManager = wifiManager,
                 frequencyY = _serviceState.value.wifiSamplingCycles.toDouble(),
@@ -421,7 +432,10 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
     fun stopCollectingData() {
         _serviceState.value.isSampling = false
         timer.stopTask()
-        motionSensorManager.stopMonitoring()
+        samplingServiceJob.cancelChildren()
+        if (!_serviceState.value.isLocatingStarted && !_serviceState.value.isLoadingStarted) {
+            motionSensorManager.stopMonitoring()
+        }
     }
 
     fun enableImuSensor() {
@@ -442,8 +456,8 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
 
     fun startLocating() {
         _serviceState.value.isLocatingStarted = true
-        motionSensorManager.startMonitoring(this)
-        serviceScope.launch {
+        motionSensorManager.startMonitoring(this@FrontService)
+        locatingServiceScope.launch {
             while (isServiceRunning) {
                 val success = wifiManager.startScan()
                 if (success) {
@@ -463,8 +477,11 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
     fun stopLocating() {
         if (!isServiceRunning) return
 
-        motionSensorManager.stopMonitoring()
-        serviceJob.cancelChildren()
+        locatingServiceJob.cancelChildren()
+        if (!_serviceState.value.isSampling) {
+            motionSensorManager.stopMonitoring()
+        }
+
         _serviceState.value.isLoadingStarted = false
         _serviceState.value.isLocatingStarted = false
     }
@@ -515,7 +532,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
                 if (0.45 < estimatedStride && estimatedStride < 0.6) {
                     stride = (1 - beta) * stride + beta * estimatedStride
                 }
-                estimatedStrides.add(estimatedStride)
+                estimatedStrides.               add(estimatedStride)
             }
             Log.e("TARGET OFFSET", "${coordinate.x}, ${coordinate.y}")
             _serviceState.value.targetOffset = Offset(coordinate.x, coordinate.y)
