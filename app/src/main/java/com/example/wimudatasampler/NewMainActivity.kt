@@ -2,16 +2,17 @@ package com.example.wimudatasampler
 
 import android.Manifest
 import dagger.hilt.android.AndroidEntryPoint
-
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.util.Log
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -21,9 +22,9 @@ import androidx.annotation.RequiresApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -33,11 +34,8 @@ import com.example.wimudatasampler.Pages.MapChoosingScreen
 import com.example.wimudatasampler.Pages.SettingScreen
 import com.example.wimudatasampler.navigation.MainActivityDestinations
 import com.example.wimudatasampler.ui.theme.WiMUTheme
-import com.example.wimudatasampler.utils.TimerUtils
-import com.example.wimudatasampler.utils.UserPreferencesKeys
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import kotlinx.coroutines.launch
-import kotlin.math.pow
 
 @AndroidEntryPoint
 class NewMainActivity : ComponentActivity() {
@@ -45,16 +43,16 @@ class NewMainActivity : ComponentActivity() {
     private val mapViewModel: MapViewModel by viewModels()
 
     // Service connection
-    private var inferenceFrontService: InferenceFrontService? = null
+    private var frontService: FrontService? = null
     private var isBound = false
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(className: ComponentName, service: IBinder) {
-            val binder = service as InferenceFrontService.LocationBinder
-            inferenceFrontService = binder.getService()
+            val binder = service as FrontService.LocationBinder
+            frontService = binder.getService()
             isBound = true
             // Start collecting state updates from the service
             lifecycleScope.launch {
-                inferenceFrontService?.serviceState?.collect { newState ->
+                frontService?.serviceState?.collect { newState ->
                     // Update UI state based on service state
                     serviceState = newState
                 }
@@ -63,91 +61,109 @@ class NewMainActivity : ComponentActivity() {
 
         override fun onServiceDisconnected(arg0: ComponentName) {
             isBound = false
-            inferenceFrontService = null
+            frontService = null
         }
     }
 
     // UI State, now driven by the service
     private var serviceState by mutableStateOf(ServiceState())
 
-    // --- Retain only the necessary variables for UI and settings ---
-    private var stride by mutableFloatStateOf(0.4f)
-    private var beta by mutableFloatStateOf(0.9f)
-    private var initialState = doubleArrayOf(0.0, 0.0)
-    private var initialCovariance = arrayOf(
-        doubleArrayOf(5.0, 0.0),
-        doubleArrayOf(0.0, 1.0)
-    )
-    private var matrixQ = arrayOf(      // Process noise (prediction error)
-        doubleArrayOf(0.05, 0.0),
-        doubleArrayOf(0.0, 0.05)
-    )
-    private var matrixR = arrayOf(
-        doubleArrayOf(4.65, 0.0),
-        doubleArrayOf(0.0, 1.75)
-    )
-    private var matrixRPowOne = 2
-    private var matrixRPowTwo = 2
-    private var fullMatrixR = arrayOf(      // Observed noise
-        doubleArrayOf(matrixR[0][0].pow(matrixRPowOne), matrixR[0][1]),
-        doubleArrayOf(matrixR[1][0], matrixR[1][1].pow(matrixRPowTwo))
-    )
-    private val userHeight = 1.7f
-    private val strideCoefficient = 0.414f
-    private var estimatedStrideLength by mutableFloatStateOf(0f)
-    private var estimatedStrides = mutableListOf<Float>()
-
-    private var sysNoise = 1f
-    private var obsNoise = 3f
-    private var distFromLastPos = 0f
-
-    private var period = 5f
-
-    private var url = "http://limcpu1.cse.ust.hk:7860"
-    private var azimuthOffset = 90f
-    // ... all your other settings variables (beta, matrixQ, etc.) remain here
-
     // Permissions logic remains in the Activity
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU) // Changed to Tiramisu for POST_NOTIFICATIONS
+    @RequiresApi(Build.VERSION_CODES.O) // Changed to Tiramisu for POST_NOTIFICATIONS
     private val requestPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
-            val permission = currentRequestedPermission
-            if (isGranted)
-                Log.i("Permission", "Permission Granted for: $permission!")
-            else Log.e("Permission", "Permission Denied for: $permission!")
-            requestNextPermission()
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+            // 检查关键的位置权限是否被授予
+            val fineLocationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
+            val coarseLocationGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
+
+            if (fineLocationGranted || coarseLocationGranted) {
+                // 只有在用户授予位置权限后，才启动服务
+                Log.i("Permission", "Location permission granted. Starting service.")
+                startAndBindToFrontService()
+            } else {
+                // 用户拒绝了关键权限，不能启动服务
+                Log.e("Permission", "Location permission denied. Cannot start service.")
+                Toast.makeText(this, "Location permission is required to run the service.", Toast.LENGTH_LONG).show()
+                // 你也可以在这里选择关闭应用或显示一个错误页面
+            }
         }
 
     private var currentRequestedPermission: String? = null
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    private fun requestNextPermission() {
-        if (permissionsToRequest.isNotEmpty()) {
-            val nextPermission = permissionsToRequest.removeAt(0)
-            currentRequestedPermission = nextPermission
-            requestPermissionLauncher.launch(nextPermission)
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun requestRequiredPermissions() {
+        // 创建一个基础权限列表
+        val requiredPermissions = mutableListOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.ACCESS_WIFI_STATE,
+            Manifest.permission.CHANGE_WIFI_STATE
+        )
+
+        // 根据 SDK 版本，条件性地添加新权限
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            requiredPermissions.add(Manifest.permission.ACTIVITY_RECOGNITION)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requiredPermissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        // 检查哪些权限是尚未被授予的
+        val permissionsToAsk = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }.toTypedArray()
+
+        if (permissionsToAsk.isEmpty()) {
+            // 所有需要的权限已经都被授予了
+            Log.i("Permission", "All required permissions are already granted.")
+            // 直接启动服务
+            startAndBindToFrontService()
+        } else {
+            // 如果有尚未授予的权限，则发起请求
+            Log.i("Permission", "Requesting permissions: ${permissionsToAsk.joinToString()}")
+            requestPermissionLauncher.launch(permissionsToAsk)
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    private val permissionsToRequest = mutableListOf(
-        Manifest.permission.ACCESS_FINE_LOCATION,
-        Manifest.permission.ACCESS_COARSE_LOCATION,
-        Manifest.permission.WRITE_EXTERNAL_STORAGE,
-        Manifest.permission.READ_EXTERNAL_STORAGE,
-        Manifest.permission.ACCESS_WIFI_STATE,
-        Manifest.permission.CHANGE_WIFI_STATE,
-        Manifest.permission.ACTIVITY_RECOGNITION,
-        Manifest.permission.POST_NOTIFICATIONS
-    )
+    @RequiresApi(Build.VERSION_CODES.O)
+    private val permissionsToRequest =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            mutableListOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.ACCESS_WIFI_STATE,
+                Manifest.permission.CHANGE_WIFI_STATE,
+                Manifest.permission.ACTIVITY_RECOGNITION,
+                Manifest.permission.POST_NOTIFICATIONS
+            )
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            mutableListOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.ACCESS_WIFI_STATE,
+                Manifest.permission.CHANGE_WIFI_STATE,
+                Manifest.permission.ACTIVITY_RECOGNITION,
+            )
+        } else {
+            mutableListOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.ACCESS_WIFI_STATE,
+                Manifest.permission.CHANGE_WIFI_STATE
+            )
+        }
 
     override fun onStart() {
         super.onStart()
         // Bind to the service if it's running
-        if (InferenceFrontService.isRunning) {
-            Intent(this, InferenceFrontService::class.java).also { intent ->
-                bindService(intent, connection, Context.BIND_AUTO_CREATE)
-            }
+        if (FrontService.isServiceRunning) {
+            val success = bindToFrontService()
         }
     }
 
@@ -160,23 +176,34 @@ class NewMainActivity : ComponentActivity() {
         }
     }
 
-    private fun startLocationService() {
-        val intent = Intent(this, InferenceFrontService::class.java).apply {
-            action = InferenceFrontService.ACTION_START
+    private fun bindToFrontService():Boolean {
+        Intent(this, FrontService::class.java).also { intent ->
+            val success = bindService(intent, connection, 0)
+            return success
         }
-        // Use startForegroundService for Android 8+
+    }
+
+    private fun startAndBindToFrontService() {
+        // This function ensures the service is started in the foreground
+        // and then binds to it.
+        val intent = Intent(this, FrontService::class.java).apply {
+            action = FrontService.ACTION_START
+        }
+
+        // Start the service in foreground mode
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
         } else {
             startService(intent)
         }
-        // Bind to the service to get updates
+
+        // Bind to the service
         bindService(intent, connection, Context.BIND_AUTO_CREATE)
     }
 
-    private fun stopLocationService() {
-        val intent = Intent(this, InferenceFrontService::class.java).apply {
-            action = InferenceFrontService.ACTION_STOP
+    private fun unbindAndStopLocationService() {
+        val intent = Intent(this, FrontService::class.java).apply {
+            action = FrontService.ACTION_STOP
         }
         startService(intent) // Send stop command
         if (isBound) {
@@ -187,18 +214,17 @@ class NewMainActivity : ComponentActivity() {
     }
 
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU) // Use Tiramisu for permissions
+    @RequiresApi(Build.VERSION_CODES.P) // Use Tiramisu for permissions
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Request all permissions at once
-        requestNextPermission()
+        requestRequiredPermissions()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enableEdgeToEdge()
         setContent {
             WiMUTheme {
                 val systemUiController = rememberSystemUiController()
                 val surfaceVariantColor = MaterialTheme.colorScheme.surface
-
                 val useDarkIcons = surfaceVariantColor.luminance() > 0.5
 
                 SideEffect {
@@ -208,75 +234,6 @@ class NewMainActivity : ComponentActivity() {
                     )
                     window.navigationBarColor = surfaceVariantColor.toArgb()
                     window.navigationBarDividerColor = surfaceVariantColor.toArgb()
-                }
-                LaunchedEffect(Unit) {
-                    this@NewMainActivity.dataStore.data.collect { preferences ->
-                        stride = preferences[UserPreferencesKeys.STRIDE] ?: stride
-                        beta = preferences[UserPreferencesKeys.BETA] ?: beta
-                        initialState = doubleArrayOf(
-                            preferences[UserPreferencesKeys.INITIAL_STATE_1]
-                                ?: initialState[0],
-                            preferences[UserPreferencesKeys.INITIAL_STATE_2]
-                                ?: initialState[1]
-                        )
-                        initialCovariance = arrayOf(
-                            doubleArrayOf(
-                                preferences[UserPreferencesKeys.INITIAL_COVARIANCE_1]
-                                    ?: initialCovariance[0][0],
-                                preferences[UserPreferencesKeys.INITIAL_COVARIANCE_2]
-                                    ?: initialCovariance[0][1]
-                            ),
-                            doubleArrayOf(
-                                preferences[UserPreferencesKeys.INITIAL_COVARIANCE_3]
-                                    ?: initialCovariance[1][0],
-                                preferences[UserPreferencesKeys.INITIAL_COVARIANCE_4]
-                                    ?: initialCovariance[1][1]
-                            ),
-                        )
-                        matrixQ = arrayOf(
-                            doubleArrayOf(
-                                preferences[UserPreferencesKeys.MATRIX_Q_1]
-                                    ?: matrixQ[0][0],
-                                preferences[UserPreferencesKeys.MATRIX_Q_2]
-                                    ?: matrixQ[0][1]
-                            ),
-                            doubleArrayOf(
-                                preferences[UserPreferencesKeys.MATRIX_Q_3]
-                                    ?: matrixQ[1][0],
-                                preferences[UserPreferencesKeys.MATRIX_Q_4]
-                                    ?: matrixQ[1][1]
-                            ),
-                        )
-                        matrixR = arrayOf(
-                            doubleArrayOf(
-                                preferences[UserPreferencesKeys.MATRIX_R_1]
-                                    ?: matrixR[0][0],
-                                preferences[UserPreferencesKeys.MATRIX_R_2]
-                                    ?: matrixR[0][1]
-                            ),
-                            doubleArrayOf(
-                                preferences[UserPreferencesKeys.MATRIX_R_3]
-                                    ?: matrixR[1][0],
-                                preferences[UserPreferencesKeys.MATRIX_R_4]
-                                    ?: matrixR[1][1]
-                            ),
-                        )
-                        matrixRPowOne =
-                            preferences[UserPreferencesKeys.MATRIX_R_POW_1] ?: matrixRPowOne
-                        matrixRPowTwo =
-                            preferences[UserPreferencesKeys.MATRIX_R_POW_2] ?: matrixRPowTwo
-                        fullMatrixR = arrayOf(      // 观测噪声
-                            doubleArrayOf(matrixR[0][0].pow(matrixRPowOne), matrixR[0][1]),
-                            doubleArrayOf(matrixR[1][0], matrixR[1][1].pow(matrixRPowTwo))
-                        )
-
-                        sysNoise = preferences[UserPreferencesKeys.SYS_NOISE] ?: sysNoise
-                        obsNoise = preferences[UserPreferencesKeys.OBS_NOISE] ?: obsNoise
-
-                        url = preferences[UserPreferencesKeys.URL] ?:url
-
-                        azimuthOffset = preferences[UserPreferencesKeys.AZIMUTH_OFFSET] ?: azimuthOffset
-                    }
                 }
 
                 Surface(
@@ -295,150 +252,151 @@ class NewMainActivity : ComponentActivity() {
                                 //ViewModel
                                 mapViewModel = mapViewModel,
                                 //UI State
-                                jDMode = true,
-                                isSampling = ,
-                                isLocatingStarted=,
-                                isLoadingStarted=,
-                                isImuEnabled=,
-                                isMyStepDetectorEnabled=,
+                                jDMode = false,
+                                isCollectTraining = serviceState.isCollectTraining,
+                                isSampling = serviceState.isSampling,
+                                isLocatingStarted = serviceState.isLocatingStarted,
+                                isLoadingStarted = serviceState.isLoadingStarted,
+                                isImuEnabled = serviceState.isImuEnabled,
+                                isMyStepDetectorEnabled = serviceState.isMyStepDetectorEnabled,
                                 //Sampling Data
-                                yaw=,
-                                pitch=,
-                                roll=,
-                                numOfLabelSampling=, // Start from 0
-                                wifiScanningInfo=,
-                                wifiSamplingCycles=,
-                                sensorSamplingCycles=,
-                                saveDirectory=,
-                                isCollectTraining=,
+                                yaw = serviceState.yaw,
+                                pitch = serviceState.pitch,
+                                roll = serviceState.roll,
+                                numOfLabelSampling = serviceState.numOfLabelSampling, // Start from 0
+                                wifiScanningInfo = serviceState.wifiScanningInfo,
+                                wifiSamplingCycles = serviceState.wifiSamplingCycles,
+                                sensorSamplingCycles = serviceState.sensorSamplingCycles,
+                                saveDirectory = serviceState.saveDirectory,
                                 //Location Data
-                                userPositionInMeters=, // User's physical location (in meters)
-                                userHeading=, // User orientation Angle (0-360)
-                                waypoints=,
-                                imuOffset=,
-                                targetOffset=,
+                                userHeading = serviceState.userHeading, // User orientation Angle (0-360)
+                                waypoints = serviceState.waypoints,
+                                imuOffset = serviceState.imuOffset,
+                                targetOffset = serviceState.targetOffset,// User's physical location (in meters)
                                 //Sampling Function
-                                updateWifiSamplingCycles={ newSamplingCycles->
+                                updateWifiSamplingCycles = { newSamplingCycles ->
                                     //更新WiFi扫描频率
-                                    //TODO
+                                    frontService?.updateWifiSamplingCycles(newValue = newSamplingCycles)
                                 },
-                                updateSensorSamplingCycles={ SensorSamplingCycles ->
+                                updateSensorSamplingCycles = { newSensorSamplingCycles ->
                                     //更新传感器扫描频率
-                                    //TODO
+                                    frontService?.updateSensorSamplingCycles(newValue = newSensorSamplingCycles)
                                 },
-                                updateSaveDirectory={ newSaveDirectory ->
+                                updateSaveDirectory = { newSaveDirectory ->
                                     //更新保存文件名
-                                    //TODO
+                                    frontService?.updateSaveDirectory(newValue = newSaveDirectory)
                                 },
-                                updateIsCollectTraining={ IsCollectTraining->
+                                updateIsCollectTraining = { isCollectTraining ->
                                     //设置是/否将单词采集归类为Training Data
-                                    //TODO
+                                    frontService?.updateIsCollectTraining(newValue = isCollectTraining)
                                 },
-                                onStartSamplingButtonClicked={labelData, numOfLabelToSample, startScanningTime ->
-                                    if (numOfLabelToSample == null) {
-                                        //无标签数据采集逻辑
-                                        //TODO
-                                    } else {
-                                        //有标签数据采集逻辑
-                                        labelPoint=inferenceFrontService.serviceState.waypints[numOfLabelToSample]
-                                        //TODO
+                                onStartSamplingButtonClicked = { indexOfLabelToSample, startScanningTime ->
+                                    indexOfLabelToSample?.let { index ->
+                                        // 有标签数据采集逻辑
+                                        val labelPoint = serviceState.waypoints[index]
+                                        frontService?.startCollectingLabelData(indexOfLabel= indexOfLabelToSample, labelPoint = labelPoint, startTimestamp = startScanningTime)
+                                    } ?: run {
+                                        // 无标签数据采集逻辑
+                                        frontService?.startCollectingUnLabelData(startTimestamp = startScanningTime)
                                     }
                                 },
                                 onStopSamplingButtonClicked={
                                     //停止采集数据逻辑
-                                    //TODO
+                                    frontService?.stopCollectingData()
                                 },
                                 //Inference Function
                                 startLocating={
                                     //开始定位逻辑
-                                    //TODO
+                                    frontService?.startLocating()
                                 },
                                 endLocating={
                                     //结束定位逻辑
-                                    //TODO
+                                    frontService?.stopLocating()
                                 },
                                 refreshLocation={
                                     //刷新定位点逻辑
-                                    //TODO
+                                    frontService?.refreshLocating()
                                 },
                                 enableImu={
                                     //开启IMU传感器逻辑
-                                    //TODO
+                                    frontService?.enableImuSensor()
                                 },
                                 disableImu={
                                     //关闭IMU传感器逻辑
-                                    //TODO
+                                    frontService?.disableImuSensor()
                                 },
                                 enableMyStepDetector={
                                     //开启自己的Step Counter传感器逻辑
-                                    //TODO
+                                    frontService?.enableOwnStepCounter()
                                 },
                                 disableMyStepDetector={
                                     //关闭自己的Step Counter传感器逻辑
-                                    //TODO
+                                    frontService?.disableOwnStepCounter()
                                 }
                             )
                         }
                         composable(MainActivityDestinations.Settings.route) {
-                            SettingScreen(
-                                context = this@NewMainActivity,
-                                navController = navController,
-                                stride = stride,
-                                beta = beta,
-                                initialState = initialState,
-                                initialCovariance = initialCovariance,
-                                matrixQ = matrixQ,
-                                matrixR = matrixR,
-                                matrixRPowOne = matrixRPowOne,
-                                matrixRPowTwo = matrixRPowTwo,
-                                sysNoise = sysNoise,
-                                obsNoise = obsNoise,
-                                period = period,
-                                url = url,
-                                azimuthOffset = azimuthOffset,
-                                updateStride = { newStride ->
-                                    stride = newStride
-                                },
-                                updateBeta = { newBeta ->
-                                    beta = newBeta
-                                },
-                                updateInitialState = { newInitialState ->
-                                    initialState = newInitialState
-                                },
-                                updateInitialCovariance = { newInitialCovariance ->
-                                    initialCovariance = newInitialCovariance
-                                },
-                                updateMatrixQ = { newMatrixQ ->
-                                    matrixQ = newMatrixQ
-                                },
-                                updateMatrixR = { newMatrixR ->
-                                    matrixR = newMatrixR
-                                },
-                                updateMatrixRPowOne = { newMatrixRPowOne ->
-                                    matrixRPowOne = newMatrixRPowOne
-                                },
-                                updateMatrixRPowTwo = { newMatrixRPowTwo ->
-                                    matrixRPowTwo = newMatrixRPowTwo
-                                },
-                                updateFullMatrixR = { newFullMatrixR  ->
-                                    fullMatrixR = newFullMatrixR
-                                },
-                                updateSysNoise = { newSysNoise ->
-                                    sysNoise = newSysNoise
-                                },
-                                updateObsNoise = { newObsNoise ->
-                                    obsNoise = newObsNoise
-                                },
-                                updatePeriod = { newPeriod ->
-                                    period = newPeriod
-                                },
-                                updateUrl = { newUrl ->
-                                    url = newUrl
-                                },
-                                updateAzimuthOffset = {newAzimuthOffset ->
-                                    azimuthOffset = newAzimuthOffset
-                                }
-                            )
+                            frontService?.let { service ->
+                                SettingScreen(
+                                    context = this@NewMainActivity,
+                                    navController = navController,
+                                    stride = service.stride,
+                                    beta = service.beta,
+                                    initialState = service.initialState,
+                                    initialCovariance = service.initialCovariance,
+                                    matrixQ = service.matrixQ,
+                                    matrixR = service.matrixR,
+                                    matrixRPowOne = service.matrixRPowOne,
+                                    matrixRPowTwo = service.matrixRPowTwo,
+                                    sysNoise = service.sysNoise,
+                                    obsNoise = service.obsNoise,
+                                    period = service.period,
+                                    url = service.url,
+                                    azimuthOffset = service.azimuthOffset,
+                                    updateStride = { newStride ->
+                                        service.stride = newStride
+                                    },
+                                    updateBeta = { newBeta ->
+                                        service.beta = newBeta
+                                    },
+                                    updateInitialState = { newInitialState ->
+                                        service.initialState = newInitialState
+                                    },
+                                    updateInitialCovariance = { newInitialCovariance ->
+                                        service.initialCovariance = newInitialCovariance
+                                    },
+                                    updateMatrixQ = { newMatrixQ ->
+                                        service.matrixQ = newMatrixQ
+                                    },
+                                    updateMatrixR = { newMatrixR ->
+                                        service.matrixR = newMatrixR
+                                    },
+                                    updateMatrixRPowOne = { newMatrixRPowOne ->
+                                        service.matrixRPowOne = newMatrixRPowOne
+                                    },
+                                    updateMatrixRPowTwo = { newMatrixRPowTwo ->
+                                        service.matrixRPowTwo = newMatrixRPowTwo
+                                    },
+                                    updateFullMatrixR = { newFullMatrixR ->
+                                        service.fullMatrixR = newFullMatrixR
+                                    },
+                                    updateSysNoise = { newSysNoise ->
+                                        service.sysNoise = newSysNoise
+                                    },
+                                    updateObsNoise = { newObsNoise ->
+                                        service.obsNoise = newObsNoise
+                                    },
+                                    updatePeriod = { newPeriod ->
+                                        service.period = newPeriod
+                                    },
+                                    updateUrl = { newUrl ->
+                                        service.url = newUrl
+                                    },
+                                    updateAzimuthOffset = { newAzimuthOffset ->
+                                        service.azimuthOffset = newAzimuthOffset
+                                    }
+                                )
+                            }
                         }
                         composable(MainActivityDestinations.MapChoosing.route) {
                             MapChoosingScreen(

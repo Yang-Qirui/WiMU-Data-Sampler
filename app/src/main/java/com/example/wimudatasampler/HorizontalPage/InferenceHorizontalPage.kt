@@ -2,7 +2,6 @@ package com.example.wimudatasampler.HorizontalPage
 
 
 import android.annotation.SuppressLint
-import android.content.Context
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.VectorConverter
@@ -11,23 +10,26 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cancel
-import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Navigation
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
@@ -54,11 +56,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import com.example.wimudatasampler.FilledCardExample
 import com.example.wimudatasampler.R
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -66,6 +65,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import com.example.wimudatasampler.DataClass.MapModels
@@ -84,7 +84,6 @@ enum class NavUiMode(val value: Int) {
 @Composable
 fun InferenceHorizontalPage(
     modifier: Modifier = Modifier,
-    context: Context,
     //UI State
     jDMode: Boolean,
     isLocatingStarted: Boolean,
@@ -92,11 +91,10 @@ fun InferenceHorizontalPage(
     isImuEnabled: Boolean,
     isMyStepDetectorEnabled: Boolean,
     //Location Data
-    userPositionInMeters: Offset?, // User's physical location (in meters)
     userHeading: Float?, // User orientation Angle (0-360)
     waypoints: SnapshotStateList<Offset>,
-    imuOffset: Offset?,
-    targetOffset: Offset?,
+    imuOffset: Offset?,// User's physical location (in meters)
+    targetOffset: Offset,
     //Button Action
     setLocatingStartTo: (Boolean) -> Unit,
     onRefreshButtonClicked: () -> Unit,
@@ -112,13 +110,13 @@ fun InferenceHorizontalPage(
     val mapWidthMeters = selectedMap.metersForMapWidth // Actual map width (m)
     val mapWidthPixels = imageBitmap.width.toFloat()
     val mapHeightPixels = imageBitmap.height.toFloat()
-    val mapAspectRatio = mapWidthPixels / mapHeightPixels
+//    val mapAspectRatio = mapWidthPixels / mapHeightPixels
 
     // Screen parameter
-    val configuration = LocalConfiguration.current
-    val screenWidthPx = with(LocalDensity.current) { configuration.screenWidthDp.dp.toPx() }
-    val screenHeightPx = with(LocalDensity.current) { configuration.screenHeightDp.dp.toPx() }
-    val screenCenter = Offset(screenWidthPx / 2, screenHeightPx / 2)
+//    val configuration = LocalConfiguration.current
+//    val screenWidthPx = with(LocalDensity.current) { configuration.screenWidthDp.dp.toPx() }
+//    val screenHeightPx = with(LocalDensity.current) { configuration.screenHeightDp.dp.toPx() }
+//    val screenCenter = Offset(screenWidthPx / 2, screenHeightPx / 2)
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val canvasCenter by derivedStateOf {
         Offset(
@@ -139,11 +137,11 @@ fun InferenceHorizontalPage(
 
     var userScreenPos by remember {
         mutableStateOf(
-            if (userPositionInMeters != null) {
-                (userPosOffsetMeters + userPositionInMeters) * pixelsPerMeter
-            } else {
-                Offset.Zero
-            }
+//            if (targetOffset != null) {
+                (userPosOffsetMeters + targetOffset) * pixelsPerMeter
+//            } else {
+//                Offset.Zero
+//            }
         )
     }
     var uiMode by remember { mutableIntStateOf(NavUiMode.USER_POS_FREE_CENTER_DIR_FREE.value) }
@@ -161,14 +159,14 @@ fun InferenceHorizontalPage(
         )
     }
 
-    LaunchedEffect(userPositionInMeters) {
-        userPositionInMeters?.let { newPos ->
+    LaunchedEffect(targetOffset) {
+        targetOffset.let { newPos ->
             userPosAnimation.animateTo(
                 targetValue = (userPosOffsetMeters + newPos) * pixelsPerMeter,
                 animationSpec = tween(500, easing = FastOutSlowInEasing)
             )
             if (uiMode != NavUiMode.USER_POS_FREE_CENTER_DIR_FREE.value) {
-                val targetTranslation = canvasCenter - userScreenPos
+                val targetTranslation = - canvasCenter + userScreenPos
                 translationAnimation.animateTo(
                     targetValue = targetTranslation,
                     animationSpec = tween(500, easing = FastOutSlowInEasing)
@@ -272,7 +270,7 @@ fun InferenceHorizontalPage(
                     )
                 }
 
-                waypoints?.forEachIndexed { index, waypoint ->
+                waypoints.forEachIndexed { index, waypoint ->
                     val screenPos = (userPosOffsetMeters + waypoint) * pixelsPerMeter
                     drawWaypointMarker(
                         jDMode = jDMode,
@@ -353,7 +351,7 @@ fun InferenceHorizontalPage(
                 offset = screenPos,
                 showingOffset = screenToMapCoordinates(screenPos),
                 onConfirm = {
-                    waypoints?.add(screenToMapCoordinates(screenPos))
+                    waypoints.add(screenToMapCoordinates(screenPos))
                     longPressPosition = null
                 },
                 onDismiss = { longPressPosition = null }
@@ -374,7 +372,7 @@ fun InferenceHorizontalPage(
                     .padding(vertical = 4.dp, horizontal = 8.dp),
                 text = when {
                     !isLocatingStarted -> "Ready to go"
-                    else -> "yaw ${(userHeading ?: 0.0F).roundToInt()}, imu (${imuOffset?.x?.roundToInt()}, ${imuOffset?.y?.roundToInt()}), pred (${targetOffset?.x?.roundToInt()}, ${targetOffset?.y?.roundToInt()})"
+                    else -> "yaw ${(userHeading ?: 0.0F).roundToInt()}, imu (${imuOffset?.x?.roundToInt()}, ${imuOffset?.y?.roundToInt()}), pred (${targetOffset.x.roundToInt()}, ${targetOffset.y.roundToInt()})"
                 },
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
@@ -491,7 +489,7 @@ fun InferenceHorizontalPage(
             }
         }
 
-        if (isLocatingStarted && !isLoadingStarted) {
+        if (isLoadingStarted) {
             FloatingActionButton(
                 modifier = Modifier
                     .padding(
@@ -676,4 +674,37 @@ fun DrawScope.drawWaypointMarker(
             20 / scale.dp.toPx()
         }
     )
+}
+
+@Composable
+fun FilledCardExample(
+    offset: Offset,
+    showingOffset: Offset, onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .offset { IntOffset(offset.x.roundToInt(), offset.y.roundToInt()) }
+            .padding(5.dp)
+    ) {
+        Column(
+            modifier = Modifier,
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "${showingOffset.x}, ${showingOffset.y}",
+                modifier = Modifier.padding(vertical = 8.dp),
+                textAlign = TextAlign.Center
+            )
+            Row {
+                Button(onClick = onConfirm, Modifier.padding(5.dp)) {
+                    Text("Yes")
+                }
+                Button(onClick = onDismiss, Modifier.padding(5.dp)) {
+                    Text("No")
+                }
+            }
+        }
+    }
 }

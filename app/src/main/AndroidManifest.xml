@@ -32,7 +32,7 @@
         android:theme="@style/Theme.WiMUDataSampler"
         tools:targetApi="31">
         <activity
-            android:name=".MainActivity"
+            android:name=".NewMainActivity"
             android:exported="true"
             android:theme="@style/Theme.WiMUDataSampler">
             <intent-filter>
@@ -43,7 +43,7 @@
         </activity>
 
         <service
-            android:name=".InferenceFrontService"
+            android:name=".FrontService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="location" />

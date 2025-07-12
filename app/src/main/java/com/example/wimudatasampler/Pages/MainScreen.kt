@@ -70,6 +70,7 @@ fun MainScreen(
     mapViewModel: MapViewModel,
     //UI State
     jDMode: Boolean,
+    isCollectTraining: Boolean,
     isSampling: Boolean,
     isLocatingStarted: Boolean,
     isLoadingStarted: Boolean,
@@ -84,19 +85,17 @@ fun MainScreen(
     wifiSamplingCycles: Float,
     sensorSamplingCycles: Float,
     saveDirectory: String,
-    isCollectTraining: Boolean,
     //Location Data
-    userPositionInMeters: Offset?, // User's physical location (in meters)
     userHeading: Float?, // User orientation Angle (0-360)
     waypoints: SnapshotStateList<Offset>,
     imuOffset: Offset?,
-    targetOffset: Offset?,
+    targetOffset: Offset,
     //Sampling Function
     updateWifiSamplingCycles: (Float) -> Unit,
     updateSensorSamplingCycles: (Float) -> Unit,
     updateSaveDirectory: (String) -> Unit,
     updateIsCollectTraining: (Boolean) -> Unit,
-    onStartSamplingButtonClicked: (labelData: Offset?, numOfLabelToSample: Int?, startScanningTime: Long) -> Unit,
+    onStartSamplingButtonClicked: (indexOfLabelToSample: Int?, startScanningTime: Long) -> Unit,
     onStopSamplingButtonClicked: () -> Unit,
     //Inference Function
     startLocating: () -> Unit,
@@ -212,6 +211,7 @@ fun MainScreen(
                 updateState = { state = pagerState.currentPage },
                 //UI State
                 jDMode = jDMode,
+                isCollectTraining = isCollectTraining,
                 isSampling = isSampling,
                 isLocatingStarted = isLocatingStarted,
                 isLoadingStarted = isLoadingStarted,
@@ -226,9 +226,7 @@ fun MainScreen(
                 wifiSamplingCycles = wifiSamplingCycles,
                 sensorSamplingCycles = sensorSamplingCycles,
                 saveDirectory = saveDirectory,
-                isCollectTraining = isCollectTraining,
                 //Location Data
-                userPositionInMeters = userPositionInMeters, // User's physical location (in meters)
                 userHeading = userHeading, // User orientation Angle (0-360)
                 waypoints = waypoints,
                 imuOffset = imuOffset,
@@ -266,6 +264,7 @@ fun AppHorizontalPager(
     updateState: () -> Unit,
     //UI State
     jDMode: Boolean,
+    isCollectTraining: Boolean,
     isSampling: Boolean,
     isLocatingStarted: Boolean,
     isLoadingStarted: Boolean,
@@ -280,19 +279,17 @@ fun AppHorizontalPager(
     wifiSamplingCycles: Float,
     sensorSamplingCycles: Float,
     saveDirectory: String,
-    isCollectTraining: Boolean,
     //Location Data
-    userPositionInMeters: Offset?, // User's physical location (in meters)
     userHeading: Float?, // User orientation Angle (0-360)
     waypoints: SnapshotStateList<Offset>,
     imuOffset: Offset?,
-    targetOffset: Offset?,
+    targetOffset: Offset, // User's physical location (in meters)
     //Sampling Function
     updateWifiSamplingCycles: (Float) -> Unit,
     updateSensorSamplingCycles: (Float) -> Unit,
     updateSaveDirectory: (String) -> Unit,
     updateIsCollectTraining: (Boolean) -> Unit,
-    onStartSamplingButtonClicked: (labelData: Offset?, numOfLabelToSample: Int?, startScanningTime: Long) -> Unit,
+    onStartSamplingButtonClicked: (indexOfLabelToSample: Int?, startScanningTime: Long) -> Unit,
     onStopSamplingButtonClicked: () -> Unit,
     //Inference Function
     startLocating: () -> Unit,
@@ -326,6 +323,7 @@ fun AppHorizontalPager(
                     context = context,
                     mapViewModel = mapViewModel,
                     jDMode = jDMode,
+                    isCollectTraining = isCollectTraining,
                     isSampling = isSampling,
                     yaw = yaw,
                     pitch = pitch,
@@ -335,7 +333,6 @@ fun AppHorizontalPager(
                     wifiSamplingCycles = wifiSamplingCycles,
                     sensorSamplingCycles = sensorSamplingCycles,
                     saveDirectory = saveDirectory,
-                    isCollectTraining = isCollectTraining,
                     waypoints = waypoints,
                     updateWifiSamplingCycles = updateWifiSamplingCycles,
                     updateSensorSamplingCycles = updateSensorSamplingCycles,
@@ -371,13 +368,11 @@ fun AppHorizontalPager(
                     if (!isLoading) {
                         imageBitmap?.let { bitmap ->
                             InferenceHorizontalPage(
-                                context = context,
                                 jDMode = jDMode,
                                 isLocatingStarted = isLocatingStarted,
                                 isLoadingStarted = isLoadingStarted,
                                 isImuEnabled = isImuEnabled,
                                 isMyStepDetectorEnabled = isMyStepDetectorEnabled,
-                                userPositionInMeters = userPositionInMeters,
                                 userHeading = userHeading,
                                 waypoints = waypoints,
                                 imuOffset = imuOffset,

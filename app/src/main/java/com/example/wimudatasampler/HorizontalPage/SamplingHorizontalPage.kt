@@ -67,7 +67,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.wimudatasampler.DataClass.MapModels
-import com.example.wimudatasampler.FilledCardExample
 import com.example.wimudatasampler.MapViewModel
 import com.example.wimudatasampler.R
 import com.example.wimudatasampler.utils.ImageUtil.Companion.getImageFolderPath
@@ -86,6 +85,7 @@ fun SamplingHorizontalPage(
     mapViewModel: MapViewModel,
     //UIState
     jDMode: Boolean,
+    isCollectTraining: Boolean,
     isSampling: Boolean,
     //sampling Data
     yaw: Float?,
@@ -96,14 +96,13 @@ fun SamplingHorizontalPage(
     wifiSamplingCycles: Float,
     sensorSamplingCycles: Float,
     saveDirectory: String,
-    isCollectTraining: Boolean,
     waypoints: SnapshotStateList<Offset>,
     //Function Action
     updateWifiSamplingCycles: (Float) -> Unit,
     updateSensorSamplingCycles: (Float) -> Unit,
     updateSaveDirectory: (String) -> Unit,
     updateIsCollectTraining: (Boolean) -> Unit,
-    onStartSamplingButtonClicked: (labelData: Offset?, numOfLabelToSample: Int?, startScanningTime: Long) -> Unit,
+    onStartSamplingButtonClicked: (indexOfLabelToSample: Int?, startScanningTime: Long) -> Unit,
     onStopSamplingButtonClicked: () -> Unit
 ) {
     var selectorExpanded by remember { mutableStateOf(false) }
@@ -114,7 +113,6 @@ fun SamplingHorizontalPage(
         )
     }
     val selectedMap by mapViewModel.selectedMap.collectAsState()
-    val scope = CoroutineScope(Dispatchers.Main)
     Column {
         Column(
             modifier = Modifier
@@ -136,7 +134,7 @@ fun SamplingHorizontalPage(
                     selectorExpanded = true
                 }
             ) {
-                if (selectedValue != "") {
+                if (numOfLabelSampling == null) {
                     Text("Collecting Labeled Data")
                 } else {
                     Text("Collect Waypoint $selectedValue")
@@ -206,7 +204,7 @@ fun SamplingHorizontalPage(
                                         waypoints = waypoints,
                                         imageBitmap = bitmap,
                                         selectedMap = map,
-                                        onAddMarkerButtonClicked = {
+                                        onAddMarkersFinishedButtonClicked = {
                                             showMarkLabelsWindow = false
                                         }
                                     )
@@ -224,7 +222,6 @@ fun SamplingHorizontalPage(
 
             var curWifiSamplingCycles by remember { mutableStateOf(wifiSamplingCycles.toString()) }
             var curSensorSamplingCycles by remember { mutableStateOf(sensorSamplingCycles.toString()) }
-            var curSaveDirectory by remember { mutableStateOf(saveDirectory) }
             var curIsCollectTraining by remember { mutableStateOf(isCollectTraining) }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -263,9 +260,8 @@ fun SamplingHorizontalPage(
             )
             OutlinedTextField(
                 enabled = !isSampling,
-                value = curSaveDirectory,
+                value = saveDirectory,
                 onValueChange = { newText ->
-                    curSaveDirectory = newText
                     updateSaveDirectory(newText)
                 },
                 label = { Text("Save directory") },
@@ -303,12 +299,11 @@ fun SamplingHorizontalPage(
                         val currentTimeMillis = System.currentTimeMillis()
                         if (selectedValue != "") {
                             onStartSamplingButtonClicked(
-                                waypoints[selectedValue.toInt() - 1],
                                 (selectedValue.toInt() - 1),
                                 currentTimeMillis
                             )
                         } else {
-                            onStartSamplingButtonClicked(null, null, currentTimeMillis)
+                            onStartSamplingButtonClicked(null, currentTimeMillis)
                         }
                     } else {
                         onStopSamplingButtonClicked()
@@ -335,7 +330,7 @@ fun MarkLabelsWindow(
     //Location Data
     waypoints: SnapshotStateList<Offset>,
     //ButtonAction
-    onAddMarkerButtonClicked: () -> Unit,
+    onAddMarkersFinishedButtonClicked: () -> Unit,
     //MapToShow
     imageBitmap: ImageBitmap,
     selectedMap: MapModels.ImageMap
@@ -541,7 +536,7 @@ fun MarkLabelsWindow(
                 .align(Alignment.BottomEnd),
             containerColor = MaterialTheme.colorScheme.primaryContainer,
             onClick = {
-                onAddMarkerButtonClicked()
+                onAddMarkersFinishedButtonClicked()
             }
         ) {
             Icon(
