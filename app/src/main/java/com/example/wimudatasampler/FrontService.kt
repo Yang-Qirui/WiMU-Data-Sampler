@@ -64,7 +64,7 @@ data class ServiceState(
     val yaw: Float = 0.0F,
     val pitch: Float = 0.0F,
     val roll: Float = 0.0F,
-    val numOfLabelSampling:Int? = null, // Start from 0
+    var numOfLabelSampling:Int? = null, // Start from 0
     val wifiScanningInfo:String?=null,
     var wifiSamplingCycles: Float = 3.0F,
     var sensorSamplingCycles: Float = 0.05F,
@@ -369,6 +369,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
     }
 
     fun startCollectingLabelData(indexOfLabel: Int, labelPoint: Offset, startTimestamp: Long) {
+        _serviceState.value.numOfLabelSampling = indexOfLabel
         if (_serviceState.value.isCollectTraining) {
             timer.setSavingDir("Train")
         } else {

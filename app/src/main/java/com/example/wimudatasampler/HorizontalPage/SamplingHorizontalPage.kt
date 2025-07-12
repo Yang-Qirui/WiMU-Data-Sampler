@@ -107,7 +107,7 @@ fun SamplingHorizontalPage(
 ) {
     var selectorExpanded by remember { mutableStateOf(false) }
     var showMarkLabelsWindow by remember { mutableStateOf(false) }
-    var selectedValue by remember {
+    var selectedValue by remember(numOfLabelSampling) {
         mutableStateOf(
             numOfLabelSampling?.let { (it + 1).toString() } ?: ""
         )
@@ -134,7 +134,7 @@ fun SamplingHorizontalPage(
                     selectorExpanded = true
                 }
             ) {
-                if (numOfLabelSampling == null) {
+                if (selectedValue == "") {
                     Text("Collecting Labeled Data")
                 } else {
                     Text("Collect Waypoint $selectedValue")
