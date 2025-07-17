@@ -24,11 +24,11 @@ object NetworkClient {
             if (parts.size >= 5) {
                 try {
                     val timestamp = parts[0].toLong()
-                    val ssid = if (parts[1].isEmpty()) null else parts[1] 
+                    val ssid = if (parts[1].isEmpty()) null else parts[1]
                     val bssid = parts[2]
                     val frequency = parts[3].toInt()
                     val rssi = parts[4].toInt()
-                    
+
                     wifiEntries.add(DataEntry(timestamp, bssid, ssid, frequency, rssi))
                 } catch (e: Exception) {
                     continue
@@ -40,13 +40,14 @@ object NetworkClient {
 
     suspend fun fetchData(
         url: String,
+        uuid: String,
         wifiResult: List<String>,
         imuInput: Offset,
         sysNoise: Float,
         obsNoise: Float
     ): HttpResponse {
         val wifiEntries = parseDataEntry(wifiResult)
-        val request = RequestData(wifiEntries, imuInput.x, imuInput.y, sysNoise, obsNoise)
+        val request = RequestData(uuid, wifiEntries, imuInput.x, imuInput.y, sysNoise, obsNoise)
         return client.post(url + "/wimu/inference") {
             contentType(ContentType.Application.Json)
             setBody(Json.encodeToString(request))
@@ -55,12 +56,13 @@ object NetworkClient {
 
     suspend fun reset(
         url: String,
+        uuid: String,
         wifiResult: List<String>,
         sysNoise: Float,
         obsNoise: Float
     ): HttpResponse {
         val wifiEntries = parseDataEntry(wifiResult)
-        val request = RequestData(wifiEntries, null, null, sysNoise, obsNoise)
+        val request = RequestData(uuid, wifiEntries, null, null, sysNoise, obsNoise)
         return client.post(url + "/wimu/reset") {
             contentType(ContentType.Application.Json)
             setBody(Json.encodeToString(request))

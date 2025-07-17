@@ -99,9 +99,11 @@ dependencies {
 
     implementation("io.ktor:ktor-client-core:$ktor_version")
     implementation("io.ktor:ktor-client-cio:$ktor_version")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
-    implementation("org.ejml:ejml-simple:0.41")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.ejml.simple)
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.org.eclipse.paho.client.mqttv3)
+    implementation(libs.org.eclipse.paho.android.service)
 }
 
 kapt {

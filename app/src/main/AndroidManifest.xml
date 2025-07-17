@@ -11,7 +11,9 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS"/>
-
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    
     <!-- Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- 前台服务权限 -->
@@ -48,6 +50,10 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <service android:name="org.eclipse.paho.android.service.MqttService" />
+        <service android:name=".PushService" android:enabled="true" android:exported="false"/>
+        
+        
     </application>
 
 </manifest>

@@ -14,6 +14,7 @@ data class DataEntry(
 
 @Serializable
 data class RequestData(
+    val uuid: String,
     val wifiEntries: List<DataEntry>,
     val dx: Float?,
     val dy: Float?,

@@ -24,7 +24,7 @@ import kotlin.coroutines.cancellation.CancellationException
 
 class TimerUtils(
     private val coroutineScope: CoroutineScope,
-    private val getWiFiScanningResultCallback: () -> MutableList<String>,
+    private val getWiFiScanningResultCallback: () -> List<String>,
     private val clearWiFiScanningResultCallback: () -> Unit,
     private val wifiManagerScanning: () -> Boolean,
     context: Context,
@@ -36,8 +36,6 @@ class TimerUtils(
     private var wifiJob: Job? = null
     private var testFreqJob: Job? = null
     private val context = context
-    private var lastMinTimestamp by mutableLongStateOf(0)
-    var lastTwoScanInterval by mutableLongStateOf(0)
     var wifiScanningInfo by mutableStateOf("null")
     private var lastSingleStepTime: Long = 0
     private var savingMainDir: String = "unlabeled"
@@ -46,7 +44,6 @@ class TimerUtils(
         sensorManager: SensorUtils,
         rotationFile: File,
         eulerFile: File,
-        stepFile: File,
         singleStepFile: File,
         singleStepRecordsFile: File
     ) {
@@ -79,16 +76,6 @@ class TimerUtils(
             eulerWriter.append("$currentTime $yaw $roll $pitch\n")
             eulerWriter.flush()
             eulerWriter.close()
-        } catch (e: IOException) {
-            e.printStackTrace()
-        }
-
-        // Write the step count data
-        try {
-            val stepWriter = FileWriter(stepFile, true)
-            stepWriter.append("$currentTime $stepCount\n")
-            stepWriter.flush()
-            stepWriter.close()
         } catch (e: IOException) {
             e.printStackTrace()
         }
@@ -136,7 +123,6 @@ class TimerUtils(
         if (!dir.exists()) {
             dir.mkdirs()
         }
-        val stepFile = File(dir, "step.txt")
         val rotationFile = File(dir, "rotation.txt")
         val eulerFile = File(dir, "euler.txt")
         val singleStepFile = File(dir, "single_step.txt")
@@ -146,14 +132,13 @@ class TimerUtils(
         isSensorTaskRunning.set(true)
         sensorJob = coroutineScope.launch {
             while (isSensorTaskRunning.get() && isActive) {
-                collectSensorData(sensorManager, rotationFile, eulerFile, stepFile, singleStepFile, singleStepRecordsFile)
+                collectSensorData(sensorManager, rotationFile, eulerFile, singleStepFile, singleStepRecordsFile)
                 delay((frequency * 1000).toLong())
             }
         }
     }
 
     fun runWifiTaskAtFrequency(
-        wifiManager: WifiManager,
         frequencyY: Double, // Wi-Fi 采集频率 (秒)
         timestamp: String,
         dirName: String,
@@ -178,13 +163,13 @@ class TimerUtils(
         wifiJob = coroutineScope.launch {
             while (isWifiTaskRunning.get() && isActive) {
                 val invokeSuccess = wifiManagerScanning()
-                Log.d("INVOKE", "[${System.currentTimeMillis()}] $invokeSuccess")
+                Log.d("INVOKE_WRITE", "[${System.currentTimeMillis()}] $invokeSuccess")
                 try {
                     if (!isWifiTaskRunning.get()) return@launch
                     val wifiResults = getWiFiScanningResultCallback().toMutableList()
                     wifiScanningInfo = "${System.currentTimeMillis()} $invokeSuccess"
                     try {
-                        val wifiWriter = FileWriter(wifiFile, false)
+                        val wifiWriter = FileWriter(wifiFile, true)
                         if (collectWaypoint) {
                             wifiWriter.append("${waypointPosition?.x}, ${waypointPosition?.y}\n")
                         }
@@ -192,6 +177,7 @@ class TimerUtils(
                             wifiWriter.append(result)
                         }
                         wifiWriter.flush()
+                        wifiWriter.close()
                     } catch (e: IOException) {
                         e.printStackTrace()
                     }

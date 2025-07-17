@@ -28,6 +28,7 @@ import androidx.core.app.NotificationCompat
 import com.example.wimudatasampler.DataClass.Coordinate
 import com.example.wimudatasampler.network.NetworkClient
 import com.example.wimudatasampler.utils.CoroutineLockIndexedList
+import com.example.wimudatasampler.utils.DeviceIdManager
 import com.example.wimudatasampler.utils.Quadruple
 import com.example.wimudatasampler.utils.SensorUtils
 import com.example.wimudatasampler.utils.TimerUtils
@@ -65,7 +66,7 @@ data class ServiceState(
     val pitch: Float = 0.0F,
     val roll: Float = 0.0F,
     var numOfLabelSampling:Int? = null, // Start from 0
-    val wifiScanningInfo:String?=null,
+    var wifiScanningInfo:String?=null,
     var wifiSamplingCycles: Float = 3.0F,
     var sensorSamplingCycles: Float = 0.05F,
     var saveDirectory: String = "",
@@ -83,6 +84,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
     lateinit var wifiManager: WifiManager
     private lateinit var wifiScanReceiver: BroadcastReceiver
     private lateinit var timer: TimerUtils
+    private lateinit var uuid: String
 
     // Coroutine Scope for the service
     private val serviceJob = Job()
@@ -105,7 +107,6 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
     private var lastGravity = FloatArray(3)
     private var lastGeomagnetic = FloatArray(3)
     private var lastMag by mutableFloatStateOf(0f)
-    private var latestWifiScanResults: List<String> = emptyList()
     private var wifiScanningResults = mutableListOf<String>()
     private var imuOffsetHistory = CoroutineLockIndexedList<Offset, Int>()
     private var stepCountHistory = 0
@@ -120,27 +121,6 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
     // 持久化的变量
     var stride by mutableFloatStateOf(0.4f)
     var beta by mutableFloatStateOf(0.9f)
-    var initialState = doubleArrayOf(0.0, 0.0)
-    var initialCovariance = arrayOf(
-        doubleArrayOf(5.0, 0.0),
-        doubleArrayOf(0.0, 1.0)
-    )
-    var matrixQ = arrayOf(      // Process noise (prediction error)
-        doubleArrayOf(0.05, 0.0),
-        doubleArrayOf(0.0, 0.05)
-    )
-    var matrixR = arrayOf(
-        doubleArrayOf(4.65, 0.0),
-        doubleArrayOf(0.0, 1.75)
-    )
-    var matrixRPowOne = 2
-    var matrixRPowTwo = 2
-    var fullMatrixR = arrayOf(      // Observed noise
-        doubleArrayOf(matrixR[0][0].pow(matrixRPowOne), matrixR[0][1]),
-        doubleArrayOf(matrixR[1][0], matrixR[1][1].pow(matrixRPowTwo))
-    )
-    val userHeight = 1.7f
-    val strideCoefficient = 0.414f
     var estimatedStrideLength by mutableFloatStateOf(0f)
     var estimatedStrides = mutableListOf<Float>()
 
@@ -176,63 +156,6 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
             dataStore.data.collect { preferences ->
                 stride = preferences[UserPreferencesKeys.STRIDE] ?: stride
                 beta = preferences[UserPreferencesKeys.BETA] ?: beta
-                initialState = doubleArrayOf(
-                    preferences[UserPreferencesKeys.INITIAL_STATE_1]
-                        ?: initialState[0],
-                    preferences[UserPreferencesKeys.INITIAL_STATE_2]
-                        ?: initialState[1]
-                )
-                initialCovariance = arrayOf(
-                    doubleArrayOf(
-                        preferences[UserPreferencesKeys.INITIAL_COVARIANCE_1]
-                            ?: initialCovariance[0][0],
-                        preferences[UserPreferencesKeys.INITIAL_COVARIANCE_2]
-                            ?: initialCovariance[0][1]
-                    ),
-                    doubleArrayOf(
-                        preferences[UserPreferencesKeys.INITIAL_COVARIANCE_3]
-                            ?: initialCovariance[1][0],
-                        preferences[UserPreferencesKeys.INITIAL_COVARIANCE_4]
-                            ?: initialCovariance[1][1]
-                    ),
-                )
-                matrixQ = arrayOf(
-                    doubleArrayOf(
-                        preferences[UserPreferencesKeys.MATRIX_Q_1]
-                            ?: matrixQ[0][0],
-                        preferences[UserPreferencesKeys.MATRIX_Q_2]
-                            ?: matrixQ[0][1]
-                    ),
-                    doubleArrayOf(
-                        preferences[UserPreferencesKeys.MATRIX_Q_3]
-                            ?: matrixQ[1][0],
-                        preferences[UserPreferencesKeys.MATRIX_Q_4]
-                            ?: matrixQ[1][1]
-                    ),
-                )
-                matrixR = arrayOf(
-                    doubleArrayOf(
-                        preferences[UserPreferencesKeys.MATRIX_R_1]
-                            ?: matrixR[0][0],
-                        preferences[UserPreferencesKeys.MATRIX_R_2]
-                            ?: matrixR[0][1]
-                    ),
-                    doubleArrayOf(
-                        preferences[UserPreferencesKeys.MATRIX_R_3]
-                            ?: matrixR[1][0],
-                        preferences[UserPreferencesKeys.MATRIX_R_4]
-                            ?: matrixR[1][1]
-                    ),
-                )
-                matrixRPowOne =
-                    preferences[UserPreferencesKeys.MATRIX_R_POW_1] ?: matrixRPowOne
-                matrixRPowTwo =
-                    preferences[UserPreferencesKeys.MATRIX_R_POW_2] ?: matrixRPowTwo
-                fullMatrixR = arrayOf(      // 观测噪声
-                    doubleArrayOf(matrixR[0][0].pow(matrixRPowOne), matrixR[0][1]),
-                    doubleArrayOf(matrixR[1][0], matrixR[1][1].pow(matrixRPowTwo))
-                )
-
                 sysNoise = preferences[UserPreferencesKeys.SYS_NOISE] ?: sysNoise
                 obsNoise = preferences[UserPreferencesKeys.OBS_NOISE] ?: obsNoise
 
@@ -241,7 +164,8 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
                 azimuthOffset = preferences[UserPreferencesKeys.AZIMUTH_OFFSET] ?: azimuthOffset
             }
         }
-
+        MqttClient.initialize(applicationContext)
+        uuid = DeviceIdManager.getDeviceId(applicationContext)
         wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
         wifiScanReceiver = object : BroadcastReceiver() {
             @SuppressLint("MissingPermission")
@@ -256,13 +180,13 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
                         Log.d("Diff", "${maxScanTime - minScanTime}")
                         Log.d("RECEIVED_RES", scanResults.toString())
                         if (maxScanTime - minScanTime < 500_000_000) {
-                            val resultList = scanResults.map { scanResult ->
+                            wifiScanningResults = scanResults.map { scanResult ->
                                 "${(minScanTime / 1000 + bootTime)} ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level}\n"
-                            }
-                            latestWifiScanResults = resultList
+                            }.toMutableList()
                             if (_serviceState.value.isLocatingStarted) {
-                                locatingServiceScope.launch { onLatestWifiResultChanged(resultList) }
+                                locatingServiceScope.launch { onLatestWifiResultChanged(wifiScanningResults.toList()) }
                             }
+                            _serviceState.value.wifiScanningInfo = timer.wifiScanningInfo
                         }
                     } else {
                         Log.e("RECEIVED", "No Wi-Fi scan results found")
@@ -280,6 +204,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
 
     override fun onDestroy() {
         super.onDestroy()
+        MqttClient.disconnect()
         stopLocating()
         stopCollectingData()
         motionSensorManager.stopMonitoring()
@@ -390,7 +315,6 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
         }
         samplingServiceScope.launch {
             timer.runWifiTaskAtFrequency(
-                wifiManager = wifiManager,
                 frequencyY = _serviceState.value.wifiSamplingCycles.toDouble(),
                 timestamp = currentTimeInText,
                 dirName = _serviceState.value.saveDirectory,
@@ -419,7 +343,6 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
         }
         samplingServiceScope.launch {
             timer.runWifiTaskAtFrequency(
-                wifiManager = wifiManager,
                 frequencyY = _serviceState.value.wifiSamplingCycles.toDouble(),
                 timestamp = currentTimeInText,
                 dirName = _serviceState.value.saveDirectory,
@@ -461,6 +384,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
         locatingServiceScope.launch {
             while (isServiceRunning) {
                 val success = wifiManager.startScan()
+                Log.d("StartLocating", "Triggered")
                 if (success) {
                     _serviceState.value.isLoadingStarted = true
                 }
@@ -506,6 +430,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
             val response = if (!firstStart) {
                 NetworkClient.fetchData(
                     url = url,
+                    uuid = uuid,
                     wifiResult = newValue,
                     imuInput = inputImuOffset,
                     sysNoise = sysNoise,
@@ -514,6 +439,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
             } else {
                 NetworkClient.reset(
                     url = url,
+                    uuid = uuid,
                     wifiResult = newValue,
                     sysNoise = sysNoise,
                     obsNoise = obsNoise

@@ -339,12 +339,6 @@ class MainActivity : ComponentActivity() {
                                     navController = navController,
                                     stride = service.stride,
                                     beta = service.beta,
-                                    initialState = service.initialState,
-                                    initialCovariance = service.initialCovariance,
-                                    matrixQ = service.matrixQ,
-                                    matrixR = service.matrixR,
-                                    matrixRPowOne = service.matrixRPowOne,
-                                    matrixRPowTwo = service.matrixRPowTwo,
                                     sysNoise = service.sysNoise,
                                     obsNoise = service.obsNoise,
                                     period = service.period,
@@ -355,27 +349,6 @@ class MainActivity : ComponentActivity() {
                                     },
                                     updateBeta = { newBeta ->
                                         service.beta = newBeta
-                                    },
-                                    updateInitialState = { newInitialState ->
-                                        service.initialState = newInitialState
-                                    },
-                                    updateInitialCovariance = { newInitialCovariance ->
-                                        service.initialCovariance = newInitialCovariance
-                                    },
-                                    updateMatrixQ = { newMatrixQ ->
-                                        service.matrixQ = newMatrixQ
-                                    },
-                                    updateMatrixR = { newMatrixR ->
-                                        service.matrixR = newMatrixR
-                                    },
-                                    updateMatrixRPowOne = { newMatrixRPowOne ->
-                                        service.matrixRPowOne = newMatrixRPowOne
-                                    },
-                                    updateMatrixRPowTwo = { newMatrixRPowTwo ->
-                                        service.matrixRPowTwo = newMatrixRPowTwo
-                                    },
-                                    updateFullMatrixR = { newFullMatrixR ->
-                                        service.fullMatrixR = newFullMatrixR
                                     },
                                     updateSysNoise = { newSysNoise ->
                                         service.sysNoise = newSysNoise
