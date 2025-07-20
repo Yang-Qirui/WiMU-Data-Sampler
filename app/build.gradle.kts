@@ -50,7 +50,22 @@ android {
     }
     packaging {
         resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes.addAll(
+                listOf(
+                    "META-INF/io.netty.versions.properties",
+                    "META-INF/LGPL2.1",
+                    "META-INF/DEPENDENCIES",
+                    "META-INF/LICENSE",
+                    "META-INF/LICENSE.txt",
+                    "META-INF/license.txt",
+                    "META-INF/NOTICE",
+                    "META-INF/NOTICE.txt",
+                    "META-INF/notice.txt",
+                    "META-INF/ASL2.0",
+                    "META-INF/*.kotlin_module",
+                    "META-INF/INDEX.LIST" // 解决你当前问题的关键
+                )
+            )
         }
     }
 }
@@ -98,12 +113,13 @@ dependencies {
     implementation(libs.hilt.navigation.compose)
 
     implementation("io.ktor:ktor-client-core:$ktor_version")
-    implementation("io.ktor:ktor-client-cio:$ktor_version")
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.ejml.simple)
     implementation(libs.kotlinx.coroutines.core)
-    implementation(libs.org.eclipse.paho.client.mqttv3)
-    implementation(libs.org.eclipse.paho.android.service)
+    implementation(libs.hivemq.mqtt.client)
+    implementation(libs.ktor.client.android)
+
+
 }
 
 kapt {

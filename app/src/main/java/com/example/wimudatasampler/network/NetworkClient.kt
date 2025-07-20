@@ -4,7 +4,7 @@ import androidx.compose.ui.geometry.Offset
 import com.example.wimudatasampler.DataClass.DataEntry
 import com.example.wimudatasampler.DataClass.RequestData
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.android.Android
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -13,7 +13,7 @@ import io.ktor.http.contentType
 import kotlinx.serialization.json.Json
 
 object NetworkClient {
-    private val client = HttpClient(CIO)
+    private val client = HttpClient(Android)
 
     private fun parseDataEntry(wifiInput: List<String>): List<DataEntry> {
         val wifiEntries = mutableListOf<DataEntry>()
