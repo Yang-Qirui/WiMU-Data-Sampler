@@ -48,26 +48,6 @@ android {
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.1"
     }
-    packaging {
-        resources {
-            excludes.addAll(
-                listOf(
-                    "META-INF/io.netty.versions.properties",
-                    "META-INF/LGPL2.1",
-                    "META-INF/DEPENDENCIES",
-                    "META-INF/LICENSE",
-                    "META-INF/LICENSE.txt",
-                    "META-INF/license.txt",
-                    "META-INF/NOTICE",
-                    "META-INF/NOTICE.txt",
-                    "META-INF/notice.txt",
-                    "META-INF/ASL2.0",
-                    "META-INF/*.kotlin_module",
-                    "META-INF/INDEX.LIST" // 解决你当前问题的关键
-                )
-            )
-        }
-    }
 }
 
 val ktor_version: String by project
@@ -116,10 +96,11 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.ejml.simple)
     implementation(libs.kotlinx.coroutines.core)
-    implementation(libs.hivemq.mqtt.client)
     implementation(libs.ktor.client.android)
-
-
+//    implementation(libs.org.eclipse.paho.client.mqttv3)
+//    implementation(libs.org.eclipse.paho.android.service)
+    implementation("com.github.hannesa2:paho.mqtt.android:4.4.1")
+    implementation(libs.androidx.localbroadcastmanager)
 }
 
 kapt {
