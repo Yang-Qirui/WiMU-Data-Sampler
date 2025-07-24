@@ -400,6 +400,14 @@ fun InferenceHorizontalPage(
                         start = 20.dp,
                         top = 20.dp,
                         bottom = 20.dp
+                    ).then(
+                        if (jDMode) {
+                            // 如果 jDMode 为 true, 应用自定义尺寸
+                            Modifier.size(width = 130.dp, height = 50.dp)
+                        } else {
+                            // 否则，不添加任何尺寸 Modifier，使用默认大小
+                            Modifier
+                        }
                     ),
                 containerColor = if (isMyStepDetectorEnabled) {
                     colorResource(id = R.color.button_container_green)
@@ -422,6 +430,14 @@ fun InferenceHorizontalPage(
                     .padding(
                         top = 20.dp,
                         bottom = 20.dp
+                    ).then(
+                        if (jDMode) {
+                            // 如果 jDMode 为 true, 应用自定义尺寸
+                            Modifier.size(width = 70.dp, height = 50.dp)
+                        } else {
+                            // 否则，不添加任何尺寸 Modifier，使用默认大小
+                            Modifier
+                        }
                     ),
                 containerColor = if (isImuEnabled) {
                     colorResource(id = R.color.button_container_green)
@@ -443,6 +459,14 @@ fun InferenceHorizontalPage(
                         end = 20.dp,
                         top = 20.dp,
                         bottom = 20.dp,
+                    ).then(
+                        if (jDMode) {
+                            // 如果 jDMode 为 true, 应用自定义尺寸
+                            Modifier.size(width = 50.dp, height = 50.dp)
+                        } else {
+                            // 否则，不添加任何尺寸 Modifier，使用默认大小
+                            Modifier
+                        }
                     ),
                 containerColor =
                 if (isLoadingStarted) {
@@ -498,7 +522,15 @@ fun InferenceHorizontalPage(
                         bottom = 20.dp,
                     )
                     .align(Alignment.BottomEnd)
-                    .padding(bottom = 80.dp),
+                    .padding(bottom = 80.dp).then(
+                        if (jDMode) {
+                            // 如果 jDMode 为 true, 应用自定义尺寸
+                            Modifier.size(width = 50.dp, height = 50.dp)
+                        } else {
+                            // 否则，不添加任何尺寸 Modifier，使用默认大小
+                            Modifier
+                        }
+                    ),
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 onClick = { onRefreshButtonClicked() }
             ) {
