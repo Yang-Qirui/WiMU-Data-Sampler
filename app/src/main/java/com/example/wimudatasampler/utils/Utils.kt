@@ -1,5 +1,11 @@
 package com.example.wimudatasampler.utils
 
+import android.annotation.SuppressLint
+import android.content.Context
+import android.os.Build
+import android.provider.Settings
+import androidx.annotation.RequiresApi
+import kotlinx.serialization.Serializable
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.math.abs
 
@@ -178,3 +184,49 @@ class CircularArray<T>(private val capacity: Int, private val allowOverwrite: Bo
     override fun toString(): String = toList().toString()
 }
 
+@SuppressLint("HardwareIds")
+fun getDeviceId(context: Context): String =
+    Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+
+@RequiresApi(Build.VERSION_CODES.N_MR1)
+@SuppressLint("HardwareIds")
+fun getDeviceName(context: Context): String {
+    // 1. 尝试获取用户在设置中定义的设备名称
+    try {
+        val userDeviceName = Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME)
+        if (!userDeviceName.isNullOrEmpty()) {
+            return userDeviceName
+        }
+    } catch (e: Exception) {
+        // 在某些设备上可能会有权限问题，安全地忽略
+    }
+
+    // 2. 如果获取不到，尝试获取蓝牙名称
+    try {
+        val bluetoothName = Settings.Secure.getString(context.contentResolver, "bluetooth_name")
+        if (!bluetoothName.isNullOrEmpty()) {
+            return bluetoothName
+        }
+    } catch (e: Exception) {
+        // 同样，安全地忽略异常
+    }
+
+    // 3. 如果以上都失败，返回制造商和型号作为兜底方案
+    val manufacturer = Build.MANUFACTURER
+    val model = Build.MODEL
+
+    return if (model.startsWith(manufacturer, ignoreCase = true)) {
+        model.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() } // 首字母大写
+    } else {
+        "${manufacturer.replaceFirstChar { it.titlecase() }} $model"
+    }
+}
+
+@Serializable
+data class UploadBatchManifest(
+    val batch_id: String,
+    val total_files: Int,
+    val device_id: String,
+    val path_name: String,
+    val data_type: String
+)

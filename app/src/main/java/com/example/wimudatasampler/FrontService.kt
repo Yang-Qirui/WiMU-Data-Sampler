@@ -25,26 +25,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.geometry.Offset
 import androidx.core.app.NotificationCompat
-import com.example.wimudatasampler.DataClass.Coordinate
-import com.example.wimudatasampler.network.NetworkClient
+import com.example.wimudatasampler.network.MqttClient
+import com.example.wimudatasampler.network.MqttClient.AckData
+import com.example.wimudatasampler.network.MqttClient.publishData
 import com.example.wimudatasampler.utils.CoroutineLockIndexedList
 import com.example.wimudatasampler.utils.DeviceIdManager
+import com.example.wimudatasampler.utils.MqttCommandListener
 import com.example.wimudatasampler.utils.Quadruple
 import com.example.wimudatasampler.utils.SensorUtils
 import com.example.wimudatasampler.utils.TimerUtils
 import com.example.wimudatasampler.utils.UserPreferencesKeys
 import com.example.wimudatasampler.utils.lowPassFilter
 import com.example.wimudatasampler.utils.validPostureCheck
-import io.ktor.client.statement.bodyAsText
+import com.example.wimudatasampler.utils.getDeviceId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
 import kotlin.math.cos
-import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlinx.coroutines.Job
@@ -78,13 +78,12 @@ data class ServiceState(
     //...
 )
 
-class FrontService : Service(), SensorUtils.SensorDataListener {
-
+class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListener {
     private lateinit var motionSensorManager: SensorUtils
     lateinit var wifiManager: WifiManager
     private lateinit var wifiScanReceiver: BroadcastReceiver
     private lateinit var timer: TimerUtils
-    private lateinit var uuid: String
+    private lateinit var deviceId: String
 
     // Coroutine Scope for the service
     private val serviceJob = Job()
@@ -110,7 +109,6 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
     private var wifiScanningResults = mutableListOf<String>()
     private var imuOffsetHistory = CoroutineLockIndexedList<Offset, Int>()
     private var stepCountHistory = 0
-    private var latestStepCount = 0
     private var lastOffset = Offset.Zero
     private var firstStart = true
     private var adjustedDegrees by mutableFloatStateOf(0f)
@@ -133,6 +131,8 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
     var url = "http://limcpu1.cse.ust.hk:7860"
     var azimuthOffset = 90f
     // 持久化的变量
+
+
 
     companion object {
         const val ACTION_START = "com.example.wimudatasampler.action.START"
@@ -164,8 +164,9 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
                 azimuthOffset = preferences[UserPreferencesKeys.AZIMUTH_OFFSET] ?: azimuthOffset
             }
         }
-        MqttClient.initialize(applicationContext)
-        uuid = DeviceIdManager.getDeviceId(applicationContext)
+        MqttClient.initialize(this)
+        MqttClient.setCommandListener(this)
+        deviceId = getDeviceId(applicationContext)
         wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
         wifiScanReceiver = object : BroadcastReceiver() {
             @SuppressLint("MissingPermission")
@@ -208,7 +209,6 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
         stopLocating()
         stopCollectingData()
         motionSensorManager.stopMonitoring()
-        timer.stopTask()
         unregisterReceiver(wifiScanReceiver)
         serviceJob.cancel()
         samplingServiceJob.cancel()
@@ -351,6 +351,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
         }
         motionSensorManager.startMonitoring(this@FrontService)
         _serviceState.value.isSampling = true
+        publishData("ack", data = AckData(deviceId = deviceId, ackInfo = "sample_on"))
     }
 
     fun stopCollectingData() {
@@ -360,6 +361,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
         if (!_serviceState.value.isLocatingStarted && !_serviceState.value.isLoadingStarted) {
             motionSensorManager.stopMonitoring()
         }
+        publishData("ack", data = AckData(deviceId = deviceId, ackInfo = "sample_off"))
     }
 
     fun enableImuSensor() {
@@ -391,6 +393,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
                 delay((period * 1000).toLong())
             }
         }
+        publishData("ack", data = AckData(deviceId = deviceId, ackInfo = "inference_on"))
     }
 
     fun refreshLocating() {
@@ -401,70 +404,85 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
 
     fun stopLocating() {
         if (!isServiceRunning) return
-
         locatingServiceJob.cancelChildren()
         if (!_serviceState.value.isSampling) {
             motionSensorManager.stopMonitoring()
         }
-
+        Log.d("DEBUG", "TRIGGER_STOP_LOC")
         _serviceState.value.isLoadingStarted = false
         _serviceState.value.isLocatingStarted = false
+        publishData("ack", data = AckData(deviceId = deviceId, ackInfo = "inference_off"))
     }
 
-    private suspend fun onLatestWifiResultChanged(newValue: List<String>) {
+    private fun onLatestWifiResultChanged(newValue: List<String>) {
         val wifiTimestamp = newValue[0].trimIndent().split(" ")[0].toLong()
-//        for (item in imuOffsetHistory.list) {
-//            Log.d("item", item.toString())
-//        }
         val closestRecord = imuOffsetHistory.get(wifiTimestamp)
         val latestImuOffset = closestRecord?.second
         val latestTimestamp = closestRecord?.third
         val latestValidation = closestRecord?.fourth
-//        Log.d("Last", latestImuOffset.toString())
         try {
             var inputImuOffset = latestImuOffset ?: Offset(0f, 0f)
             if (lastMag > 80 || (latestValidation != null && !latestValidation)) {
 //                sysNoise = 4f
                 inputImuOffset = Offset(0f, 0f)
             }
-            val response = if (!firstStart) {
-                NetworkClient.fetchData(
-                    url = url,
-                    uuid = uuid,
-                    wifiResult = newValue,
-                    imuInput = inputImuOffset,
-                    sysNoise = sysNoise,
-                    obsNoise = obsNoise
+            if (!firstStart) {
+                MqttClient.publishData(
+                    topicSuffix = "inference",
+                    data = MqttClient.InferenceData(
+                        deviceId = getDeviceId(this.applicationContext),
+                        wifiList = newValue,
+                        imuOffset = Pair(inputImuOffset.x, inputImuOffset.y),
+                        sysNoise = sysNoise,
+                        obsNoise = obsNoise,
+                    )
                 )
+//                NetworkClient.fetchData(
+//                    url = url,
+//                    uuid = uuid,
+//                    wifiResult = newValue,
+//                    imuInput = inputImuOffset,
+//                    sysNoise = sysNoise,
+//                    obsNoise = obsNoise
+//                )
             } else {
-                NetworkClient.reset(
-                    url = url,
-                    uuid = uuid,
-                    wifiResult = newValue,
-                    sysNoise = sysNoise,
-                    obsNoise = obsNoise
+                MqttClient.publishData(
+                    topicSuffix = "inference",
+                    data = MqttClient.InferenceData(
+                        deviceId = getDeviceId(this.applicationContext),
+                        wifiList = newValue,
+                        imuOffset = null,
+                        sysNoise = sysNoise,
+                        obsNoise = obsNoise,
+                    )
                 )
+//                NetworkClient.reset(
+//                    url = url,
+//                    uuid = uuid,
+//                    wifiResult = newValue,
+//                    sysNoise = sysNoise,
+//                    obsNoise = obsNoise
+//                )
             }
-            Log.d("current pos", response.bodyAsText())
-            val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
-//            Log.d("last pos", "${lastOffset.x}, ${lastOffset.y}")
-            if (!firstStart && latestTimestamp != null && latestTimestamp - latestStepCount != 0) {
-                val delta = sqrt((inputImuOffset.x + lastOffset.x - coordinate.x).pow(2) + (inputImuOffset.y + lastOffset.y - coordinate.y).pow(2))
-                Log.d("Delta", "$delta, ${distFromLastPos + delta}")
-
-                val estimatedStride = (distFromLastPos + delta) / (latestTimestamp - latestStepCount)
-                Log.d("Est", estimatedStride.toString())
-                Log.d("Step diff", "${latestTimestamp - latestStepCount}")
-                latestStepCount = latestTimestamp
-                if (0.45 < estimatedStride && estimatedStride < 0.6) {
-                    stride = (1 - beta) * stride + beta * estimatedStride
-                }
-                estimatedStrides.               add(estimatedStride)
-            }
-            Log.e("TARGET OFFSET", "${coordinate.x}, ${coordinate.y}")
-            _serviceState.value.targetOffset = Offset(coordinate.x, coordinate.y)
-            this.lastOffset = Offset(coordinate.x, coordinate.y)
-            _serviceState.value.imuOffset = Offset(0f, 0f)
+//            Log.d("current pos", response.bodyAsText())
+//            val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
+//            if (!firstStart && latestTimestamp != null && latestTimestamp - latestStepCount != 0) {
+//                val delta = sqrt((inputImuOffset.x + lastOffset.x - coordinate.x).pow(2) + (inputImuOffset.y + lastOffset.y - coordinate.y).pow(2))
+//                Log.d("Delta", "$delta, ${distFromLastPos + delta}")
+//
+//                val estimatedStride = (distFromLastPos + delta) / (latestTimestamp - latestStepCount)
+//                Log.d("Est", estimatedStride.toString())
+//                Log.d("Step diff", "${latestTimestamp - latestStepCount}")
+//                latestStepCount = latestTimestamp
+//                if (0.45 < estimatedStride && estimatedStride < 0.6) {
+//                    stride = (1 - beta) * stride + beta * estimatedStride
+//                }
+//                estimatedStrides.add(estimatedStride)
+//            }
+//            Log.e("TARGET OFFSET", "${coordinate.x}, ${coordinate.y}")
+//            _serviceState.value.targetOffset = Offset(coordinate.x, coordinate.y)
+//            this.lastOffset = Offset(coordinate.x, coordinate.y)
+//            _serviceState.value.imuOffset = Offset(0f, 0f)
             this.imuOffsetHistory.clear()
             this.distFromLastPos = 0f
             this.firstStart = false
@@ -620,5 +638,39 @@ class FrontService : Service(), SensorUtils.SensorDataListener {
 //        val angleFromNorth = ((90 - Math.toDegrees(angleFromEast)) % 360).toFloat()
 //        adjustedDegrees = if (angleFromNorth > 180) angleFromNorth - 360 else angleFromNorth
 //        adjustedDegrees = (degrees + 360) % 360
+    }
+
+    override fun onStartSampling() {
+        val timestamp = System.currentTimeMillis()
+        startCollectingUnLabelData(timestamp) //TODO: "Maybe support labeled sampling?"
+    }
+
+    override fun onStopSampling() {
+        stopCollectingData()
+    }
+
+    override fun onStartInference() {
+        Log.d("DEBUG", "Triggered")
+        startLocating()
+    }
+
+    override fun onStopInference() {
+        Log.d("DEBUG", "STOP TRIGGERED")
+        stopLocating()
+    }
+
+    override fun onGetInferenceResult(x: Float, y: Float) {
+        Log.e("TARGET OFFSET", "$x, $y")
+        _serviceState.value.targetOffset = Offset(x, y)
+        this.lastOffset = Offset(x, y)
+        _serviceState.value.imuOffset = Offset(0f, 0f)
+    }
+
+    override fun onUnknownCommand(command: String) {
+        TODO("Not yet implemented")
+    }
+
+    override fun onCommandError(payload: String, error: Throwable) {
+        TODO("Not yet implemented")
     }
 }

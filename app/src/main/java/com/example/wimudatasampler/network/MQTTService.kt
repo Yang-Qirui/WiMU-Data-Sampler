@@ -1,10 +1,13 @@
-package com.example.wimudatasampler
+package com.example.wimudatasampler.network
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
-import android.provider.Settings
+import android.os.Build
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.core.content.edit
+import com.example.wimudatasampler.utils.MqttCommandListener
+import com.example.wimudatasampler.utils.MqttData
 import io.ktor.client.*
 import io.ktor.client.engine.android.Android
 import io.ktor.client.request.*
@@ -17,32 +20,42 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.eclipse.paho.client.mqttv3.*
 import info.mqtt.android.service.MqttAndroidClient
-
+import kotlinx.serialization.json.Json.Default.decodeFromString
+import kotlinx.serialization.json.jsonPrimitive
+import com.example.wimudatasampler.Config.API_BASE_URL
+import com.example.wimudatasampler.Config.KEY_MQTT_PASSWORD
+import com.example.wimudatasampler.Config.KEY_MQTT_USERNAME
+import com.example.wimudatasampler.Config.MQTT_SERVER_URI
+import com.example.wimudatasampler.Config.PREFS_NAME
+import com.example.wimudatasampler.utils.getDeviceId
+import com.example.wimudatasampler.utils.getDeviceName
+import info.mqtt.android.service.Ack
 
 object MqttClient {
 
-    private const val TAG = "MqttPushClient-Paho"
+    const val TAG = "MqttPushClient-Paho"
     // --- Paho 的 WebSocket URI 格式是 "ws://" 或 "wss://" ---
-    private const val MQTT_SERVER_URI = "ws://limcpu1.cse.ust.hk:7860/mqttbroker/"
-    private const val API_BASE_URL = "http://limcpu1.cse.ust.hk:7860/mqttapi"
-    private const val PREFS_NAME = "MqttPrefs"
-    private const val KEY_MQTT_USERNAME = "mqtt_username"
-    private const val KEY_MQTT_PASSWORD = "mqtt_password"
 
-    // --- Paho 客户端实例 ---
-    private var pahoMqClient: MqttAndroidClient? = null
+    @SuppressLint("StaticFieldLeak")
+    var pahoMqClient: MqttAndroidClient? = null
+    private var commandListener: MqttCommandListener? = null
 
     private lateinit var appContext: Context
     private lateinit var prefs: SharedPreferences
     private val ktorHttpClient = HttpClient(Android)
+
+    fun setCommandListener(listener: MqttCommandListener?) {
+        Log.d(TAG, "Setting MqttCommandListener.")
+        commandListener = listener
+    }
 
     fun initialize(context: Context) {
         if (this::appContext.isInitialized) {
             Log.w(TAG, "MqttClient is already initialized.")
             return
         }
-        this.appContext = context.applicationContext
-        this.prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        appContext = context.applicationContext
+        prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         CoroutineScope(Dispatchers.IO).launch {
             connect()
         }
@@ -64,7 +77,7 @@ object MqttClient {
     }
 
     private fun setupAndConnectMqtt(credentials: MqttCredentials) {
-        val clientId = getDeviceId()
+        val clientId = getDeviceId(appContext)
 
         // 1. 创建 Paho MqttAndroidClient 实例
         pahoMqClient = MqttAndroidClient(appContext, MQTT_SERVER_URI, clientId)
@@ -74,7 +87,9 @@ object MqttClient {
             override fun connectComplete(reconnect: Boolean, serverURI: String?) {
                 Log.i(TAG, "Paho MQTT Connection Complete. Reconnect: $reconnect")
                 // 连接成功后，订阅主题
-                subscribeToTopic(credentials.mqttUsername)
+                subscribeToTopic("devices/${credentials.mqttUsername}/commands")
+                subscribeToTopic("devices/inference")
+                subscribeToTopic("devices/ack")
             }
 
             override fun connectionLost(cause: Throwable?) {
@@ -84,7 +99,31 @@ object MqttClient {
             override fun messageArrived(topic: String, message: MqttMessage) {
                 val payload = String(message.payload)
                 Log.i(TAG, "Message arrived from '$topic': $payload")
-                // TODO: 在这里处理收到的指令
+                try {
+                    val result = decodeFromString<MqttData>(payload)
+                    val command = result.data["command"]?.jsonPrimitive?.content!!
+                    when (command) {
+                        "end_sample" -> {
+                            commandListener?.onStopSampling()
+                        }
+                        "end_inference" -> {
+                            commandListener?.onStopInference()
+                        }
+                        "start_sample" -> {
+                            commandListener?.onStartSampling()
+                        }
+                        "start_inference" -> {
+                            commandListener?.onStartInference()
+                        }
+                        "inference_result" -> {
+                            val x = result.data["x"]?.jsonPrimitive?.content!!
+                            val y = result.data["y"]?.jsonPrimitive?.content!!
+                            commandListener?.onGetInferenceResult(x.toFloat(), y.toFloat())
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.d(TAG, e.toString())
+                }
             }
 
             override fun deliveryComplete(token: IMqttDeliveryToken?) {}
@@ -116,8 +155,7 @@ object MqttClient {
         }
     }
 
-    private fun subscribeToTopic(username: String) {
-        val topic = "devices/$username/commands"
+    private fun subscribeToTopic(topic: String) {
         try {
             // 使用 Listener 回调处理订阅结果
             pahoMqClient?.subscribe(topic, 1, null, object : IMqttActionListener {
@@ -135,10 +173,13 @@ object MqttClient {
 
     // --- 网络和辅助方法保持不变 ---
 
+    @RequiresApi(Build.VERSION_CODES.N_MR1)
     private suspend fun fetchCredentialsFromServer(): MqttCredentials? {
         return try {
-            val deviceId = getDeviceId()
-            val requestBody = RegisterDeviceRequest(deviceId)
+            val deviceId = getDeviceId(appContext)
+            val deviceName = getDeviceName(appContext)
+            Log.d("deviceName", deviceName)
+            val requestBody = RegisterDeviceRequest(deviceId, deviceName)
             val jsonStringBody = Json.encodeToString(requestBody)
             val response = ktorHttpClient.post("$API_BASE_URL/register") {
                 contentType(ContentType.Application.Json)
@@ -156,10 +197,6 @@ object MqttClient {
             null
         }
     }
-
-    @SuppressLint("HardwareIds")
-    private fun getDeviceId(): String =
-        Settings.Secure.getString(appContext.contentResolver, Settings.Secure.ANDROID_ID)
 
     private fun saveCredentialsToPrefs(credentials: MqttCredentials) {
         prefs.edit(commit = true) {
@@ -182,13 +219,62 @@ object MqttClient {
         try {
             ktorHttpClient.close()
             pahoMqClient?.disconnect()
+            pahoMqClient = null
         } catch (e: Exception) {
             Log.e(TAG, "Error during disconnection", e)
         }
     }
 
+    inline fun <reified T>publishData(topicSuffix: String, data: T, qos: Int = 1, retained: Boolean = false) {
+        // 1. 检查客户端是否已连接
+        if (pahoMqClient?.isConnected != true) {
+            Log.e(TAG, "Cannot publish data, MQTT client is not connected.")
+            return
+        }
+
+        val fullTopic = "devices/$topicSuffix"
+
+        try {
+            // 3. 使用 Kotlinx.serialization 将数据对象序列化为 JSON 字符串
+            val payloadString = Json.encodeToString(data)
+
+            // 4. 创建 MqttMessage
+            val mqttMessage = MqttMessage(payloadString.toByteArray()).apply {
+                this.qos = qos
+                this.isRetained = retained
+            }
+
+            // 5. 使用 Paho 客户端发布消息
+            pahoMqClient?.publish(fullTopic, mqttMessage, null, object : IMqttActionListener {
+                override fun onSuccess(asyncActionToken: IMqttToken?) {
+                    Log.i(TAG, "Successfully published message to '$fullTopic'. Payload: $payloadString")
+                }
+
+                override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                    Log.e(TAG, "Failed to publish message to '$fullTopic'", exception)
+                }
+            })
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during serialization or publishing", e)
+        }
+    }
+
     @Serializable
-    data class RegisterDeviceRequest(val deviceId: String)
+    data class RegisterDeviceRequest(val deviceId: String, val deviceName: String)
     @Serializable
     data class MqttCredentials(val mqttUsername: String, val mqttPassword: String)
+    @Serializable
+    data class InferenceData(
+        val deviceId: String,
+        val wifiList: List<String>,
+        val imuOffset: Pair<Float, Float>?,
+        val sysNoise: Float,
+        val obsNoise: Float
+    )
+    @Serializable
+    data class AckData(
+        val deviceId: String,
+        val ackInfo: String
+    )
 }

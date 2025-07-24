@@ -2,15 +2,20 @@ package com.example.wimudatasampler.utils
 
 import android.content.Context
 import android.hardware.SensorManager
-import android.net.wifi.WifiManager
 import android.os.Environment
-import android.os.SystemClock
 import android.util.Log
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.android.Android
+import io.ktor.client.request.forms.formData
+import io.ktor.client.request.forms.submitFormWithBinaryData
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -21,6 +26,18 @@ import java.io.FileWriter
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
+import com.example.wimudatasampler.Config.API_BASE_URL
+import io.ktor.client.request.forms.InputProvider
+import io.ktor.client.request.forms.MultiPartFormDataContent
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.serialization.json.Json
+import java.util.UUID
 
 class TimerUtils(
     private val coroutineScope: CoroutineScope,
@@ -31,38 +48,30 @@ class TimerUtils(
 ){
     private var isSensorTaskRunning = AtomicBoolean(false)
     private var isWifiTaskRunning = AtomicBoolean(false)
-    private var isTestFreqTaskRunning = AtomicBoolean(false)
     private var sensorJob: Job? = null
     private var wifiJob: Job? = null
-    private var testFreqJob: Job? = null
+    private var uploadJob: Job? = null
     private val context = context
     var wifiScanningInfo by mutableStateOf("null")
     private var lastSingleStepTime: Long = 0
     private var savingMainDir: String = "unlabeled"
+    private var dirPath: File? = null
+    private val uploadClient = HttpClient(Android)
+    private var isCollectLabel = false
+    private val uploadServiceJob = Job()
+    private val uploadServiceScope = CoroutineScope(Dispatchers.IO + uploadServiceJob)
 
     private fun collectSensorData(
         sensorManager: SensorUtils,
-        rotationFile: File,
         eulerFile: File,
         singleStepFile: File,
-        singleStepRecordsFile: File
     ) {
         if (!isSensorTaskRunning.get()) return
         // Use the last known sensor data, or fallback to default if not available
         val rotationVector = sensorManager.getLastRotationVector() ?: floatArrayOf(0f, 0f, 0f, 0f)
-        val stepCount = sensorManager.getLastStepCount() ?: 0f
         val currentSingleStepTime = sensorManager.getLastSingleStepTime() ?: 0
-        val singleStepRecords = sensorManager.getStepTimestamps() ?: emptyList()
 
         val currentTime = System.currentTimeMillis()
-        try {
-            val rotationWriter = FileWriter(rotationFile, true)
-            rotationWriter.append("$currentTime ${rotationVector.joinToString(" ")}\n")
-            rotationWriter.flush()
-            rotationWriter.close()
-        } catch (e: IOException) {
-            e.printStackTrace()
-        }
 
         try {
             val eulerWriter = FileWriter(eulerFile, true)
@@ -81,24 +90,13 @@ class TimerUtils(
         }
 
         try {
+            val singleStepWriter = FileWriter(singleStepFile, true)
             if (currentSingleStepTime != lastSingleStepTime) {
-                val singleStepWriter = FileWriter(singleStepFile, true)
                 singleStepWriter.append("$currentSingleStepTime\n")
-                singleStepWriter.flush()
-                singleStepWriter.close()
-                lastSingleStepTime = currentSingleStepTime
             }
-        } catch (e: IOException) {
-            e.printStackTrace()
-        }
-
-        try {
-            val singleStepRecordWriter = FileWriter(singleStepRecordsFile, false)
-            for (item in singleStepRecords) {
-                singleStepRecordWriter.write("$item\n")
-            }
-            singleStepRecordWriter.flush()
-            singleStepRecordWriter.close()
+            singleStepWriter.flush()
+            singleStepWriter.close()
+            lastSingleStepTime = currentSingleStepTime
         } catch (e: IOException) {
             e.printStackTrace()
         }
@@ -123,16 +121,14 @@ class TimerUtils(
         if (!dir.exists()) {
             dir.mkdirs()
         }
-        val rotationFile = File(dir, "rotation.txt")
+        dirPath = dir
         val eulerFile = File(dir, "euler.txt")
-        val singleStepFile = File(dir, "single_step.txt")
-        val singleStepRecordsFile = File(dir, "single_step_rec.txt")
-
+        val singleStepFile = File(dir, "step.txt")
 
         isSensorTaskRunning.set(true)
         sensorJob = coroutineScope.launch {
             while (isSensorTaskRunning.get() && isActive) {
-                collectSensorData(sensorManager, rotationFile, eulerFile, singleStepFile, singleStepRecordsFile)
+                collectSensorData(sensorManager, eulerFile, singleStepFile)
                 delay((frequency * 1000).toLong())
             }
         }
@@ -145,6 +141,7 @@ class TimerUtils(
         collectWaypoint: Boolean,
         waypointPosition: Offset? = null,
     ) {
+        isCollectLabel = collectWaypoint
         val appDir = File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
         val mainDir = File(appDir, savingMainDir)
         if (!mainDir.exists()) {
@@ -157,6 +154,7 @@ class TimerUtils(
         if (!dir.exists()) {
             dir.mkdirs()
         }
+        dirPath = dir
         val wifiFile = File(dir, "wifi.txt")
         isWifiTaskRunning.set(true)
         clearWiFiScanningResultCallback()
@@ -189,40 +187,105 @@ class TimerUtils(
         }
     }
 
-//    fun runTestFrequencyTask(
-//        wifiManager: WifiManager,
-//        frequency: Float
-//    ) {
-//        isTestFreqTaskRunning.set(true)
-//        testFreqJob = coroutineScope.launch {
-//            while (isTestFreqTaskRunning.get() && isActive) {
-//                try {
-//                    if (!isTestFreqTaskRunning.get()) return@launch
-//                    val wifi = wifiScan(wifiManager)
-//                    wifiScanningInfo = info
-//                    if (success && latestMinTimestamp != lastMinTimestamp) {
-//                        lastTwoScanInterval = latestMinTimestamp - lastMinTimestamp
-//                        lastMinTimestamp = latestMinTimestamp
-//                    }
-//                    delay((frequency * 1000).toLong())
-//                }catch (e: CancellationException){
-//                    break
-//                }
-//            }
-//        }
-//    }
-
     fun setSavingDir(dir: String) {
         savingMainDir = dir
+    }
+
+    suspend fun uploadSampledData(uploadMetaUrl:String, uploadFileUrl: String): Boolean {
+//        Log.d("Uploading")
+        val directory = dirPath
+        if (directory == null || !directory.exists() || !directory.isDirectory) {
+            Log.e("UploadV2", "Directory path is invalid or does not exist: $dirPath")
+            return false
+        }
+        val filesToUpload = directory.listFiles()?.filter { it.isFile }
+        if (filesToUpload.isNullOrEmpty()) {
+            Log.w("UploadV2", "No files to upload in directory: ${directory.absolutePath}")
+            return true // 目录为空，也算作“成功”
+        }
+        val batchId = UUID.randomUUID().toString()
+        val fileNames = filesToUpload.map { it.name }
+        val manifest = UploadBatchManifest(
+            batch_id = batchId,
+            total_files = fileNames.size,
+            device_id = getDeviceId(context.applicationContext),
+            path_name = directory.path,
+            data_type = if(isCollectLabel) "labeled" else "unlabeled"
+        )
+        try {
+            val metaUploadResponse = uploadClient.post(uploadMetaUrl) {
+                contentType(ContentType.Application.Json)
+                setBody(Json.encodeToString(manifest))
+            }
+            if (metaUploadResponse.status != HttpStatusCode.OK) {
+                Log.e("UploadV2", "Failed to initialize batch. Status: ${metaUploadResponse.status}. Body: ${metaUploadResponse.bodyAsText()}")
+                return false
+            }
+            Log.i("UploadV2", "Batch initialized successfully on the server.")
+
+            // 3. 第二步：并发上传所有文件到 /api/upload/chunk
+            val uploadJobs = filesToUpload.map { file ->
+                // 使用 async 启动并发任务，它会返回一个 Deferred<Boolean>
+                uploadServiceScope.async {
+                    uploadSingleFile(uploadFileUrl, batchId, file)
+                }
+            }
+
+            // 等待所有上传任务完成，并获取它们的布尔结果
+            val results = uploadJobs.awaitAll()
+
+            // 检查是否所有上传都成功了
+            val allUploadsSuccessful = results.all { it }
+            if (allUploadsSuccessful) {
+                Log.i("UploadV2", "All files for batch $batchId uploaded successfully!")
+            } else {
+                Log.e("UploadV2", "One or more files failed to upload for batch $batchId.")
+            }
+            return allUploadsSuccessful
+        } catch (e: Exception) {
+            Log.e("UploadV2", "An exception occurred during the upload process for batch $batchId", e)
+            return false
+        }
+    }
+
+    private suspend fun uploadSingleFile(baseUrl: String, batchId: String, file: File): Boolean {
+        Log.d("UploadV2", "[${batchId}] Uploading chunk: ${file.name}...")
+        try {
+            val response = uploadClient.post(baseUrl) {
+                setBody(MultiPartFormDataContent(
+                    formData {
+                        append("batch_id", batchId)
+                        append("file", file.readBytes(), Headers.build {
+                            set(HttpHeaders.ContentType, ContentType.Application.OctetStream.toString())
+                            set(HttpHeaders.ContentDisposition, "filename=\"${file.name}\"")
+                        })
+                    }
+                ))
+            }
+            if (response.status == HttpStatusCode.OK) {
+                Log.d("UploadV2", "[${batchId}] Successfully uploaded chunk: ${file.name}")
+                return true
+            } else {
+                Log.e("UploadV2", "[${batchId}] Failed to upload chunk ${file.name}. Status: ${response.status}, Body: ${response.bodyAsText()}")
+                return false
+            }
+        } catch (e: Exception) {
+            Log.e("UploadV2", "[${batchId}] Exception while uploading chunk ${file.name}", e)
+            return false
+        }
     }
 
     // 提供停止任务的方法
     fun stopTask() {
         sensorJob?.cancel(cause = CancellationException("Sensor task finished"))
         wifiJob?.cancel(cause = CancellationException("wifi task finished"))
-        testFreqJob?.cancel(cause = CancellationException("wifi task finished"))
-        isSensorTaskRunning.set(false)  // 将标志设为false，停止任务
+        isSensorTaskRunning.set(false)
         isWifiTaskRunning.set(false)
-        isTestFreqTaskRunning.set(false)
+        uploadJob = uploadServiceScope.launch {
+            uploadSampledData(
+                uploadMetaUrl = "$API_BASE_URL/upload_meta",
+                uploadFileUrl = "$API_BASE_URL/upload"
+            )
+        }
     }
 }
