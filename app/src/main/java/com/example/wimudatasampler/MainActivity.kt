@@ -1,15 +1,19 @@
 package com.example.wimudatasampler
 
 import android.Manifest
+import android.content.BroadcastReceiver
 import dagger.hilt.android.AndroidEntryPoint
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.provider.Settings
 import android.util.Log
 import android.view.WindowManager
 import android.widget.Toast
@@ -19,8 +23,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.annotation.RequiresApi
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
@@ -39,9 +46,7 @@ import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-
     private val mapViewModel: MapViewModel by viewModels()
-
     // Service connection
     private var frontService: FrontService? = null
     private var isBound = false
@@ -58,15 +63,26 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-
         override fun onServiceDisconnected(arg0: ComponentName) {
             isBound = false
             frontService = null
         }
     }
-
     // UI State, now driven by the service
     private var serviceState by mutableStateOf(ServiceState())
+
+    // --- NEW: State to control the location disabled dialog ---
+    private var showLocationDisabledDialog by mutableStateOf(false)
+
+    // --- NEW: BroadcastReceiver to listen for location provider changes ---
+    private val locationSwitchStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (LocationManager.PROVIDERS_CHANGED_ACTION == intent.action) {
+                // Location state has changed, re-check and update the dialog state
+                checkLocationAndShowDialog()
+            }
+        }
+    }
 
     // Permissions logic remains in the Activity
     @RequiresApi(Build.VERSION_CODES.O) // Changed to Tiramisu for POST_NOTIFICATIONS
@@ -75,7 +91,6 @@ class MainActivity : ComponentActivity() {
             // 检查关键的位置权限是否被授予
             val fineLocationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
             val coarseLocationGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
-
             if (fineLocationGranted || coarseLocationGranted) {
                 // 只有在用户授予位置权限后，才启动服务
                 Log.i("Permission", "Location permission granted. Starting service.")
@@ -86,7 +101,6 @@ class MainActivity : ComponentActivity() {
                 Toast.makeText(this, "Location permission is required to run the service.", Toast.LENGTH_LONG).show()
             }
         }
-
     @RequiresApi(Build.VERSION_CODES.O)
     private fun requestRequiredPermissions() {
         // 基础权限列表
@@ -96,7 +110,6 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.ACCESS_WIFI_STATE,
             Manifest.permission.CHANGE_WIFI_STATE
         )
-
         // 根据 SDK 版本，条件性地添加新权限
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             requiredPermissions.add(Manifest.permission.ACTIVITY_RECOGNITION)
@@ -104,12 +117,10 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requiredPermissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
-
         // 检查哪些权限是尚未被授予的
         val permissionsToAsk = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }.toTypedArray()
-
         if (permissionsToAsk.isEmpty()) {
             // 所有需要的权限已经都被授予了
             Log.i("Permission", "All required permissions are already granted.")
@@ -122,48 +133,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.O)
-    private val permissionsToRequest =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            mutableListOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                Manifest.permission.READ_EXTERNAL_STORAGE,
-                Manifest.permission.ACCESS_WIFI_STATE,
-                Manifest.permission.CHANGE_WIFI_STATE,
-                Manifest.permission.ACTIVITY_RECOGNITION,
-                Manifest.permission.POST_NOTIFICATIONS
-            )
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            mutableListOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                Manifest.permission.READ_EXTERNAL_STORAGE,
-                Manifest.permission.ACCESS_WIFI_STATE,
-                Manifest.permission.CHANGE_WIFI_STATE,
-                Manifest.permission.ACTIVITY_RECOGNITION,
-            )
-        } else {
-            mutableListOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                Manifest.permission.READ_EXTERNAL_STORAGE,
-                Manifest.permission.ACCESS_WIFI_STATE,
-                Manifest.permission.CHANGE_WIFI_STATE
-            )
-        }
-
+    // --- MODIFIED: onStart lifecycle method ---
     override fun onStart() {
         super.onStart()
         // Bind to the service if it's running
         if (FrontService.isServiceRunning) {
-            val success = bindToFrontService()
+            bindToFrontService()
         }
+
+        // NEW: Register the receiver and perform the initial check
+        registerReceiver(locationSwitchStateReceiver, IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION))
+        checkLocationAndShowDialog()
     }
 
+    // --- MODIFIED: onStop lifecycle method ---
     override fun onStop() {
         super.onStop()
         // Unbind from the service
@@ -171,33 +154,53 @@ class MainActivity : ComponentActivity() {
             unbindService(connection)
             isBound = false
         }
+        // NEW: Unregister the receiver to prevent memory leaks
+        unregisterReceiver(locationSwitchStateReceiver)
     }
 
-    private fun bindToFrontService():Boolean {
-        Intent(this, FrontService::class.java).also { intent ->
-            val success = bindService(intent, connection, 0)
-            return success
+    // --- NEW: Helper function to check if location services are enabled ---
+    private fun isLocationEnabled(): Boolean {
+        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+    }
+
+    // --- NEW: Helper function to show dialog if location is disabled ---
+    private fun checkLocationAndShowDialog() {
+        if (!isLocationEnabled()) {
+            showLocationDisabledDialog = true
+        } else {
+            showLocationDisabledDialog = false
         }
     }
 
+    // --- NEW: Helper function to open system location settings ---
+    private fun openLocationSettings() {
+        val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+        startActivity(intent)
+    }
+
+
+    private fun bindToFrontService():Boolean {
+        Intent(this, FrontService::class.java).also { intent ->
+            return bindService(intent, connection, 0)
+        }
+    }
     private fun startAndBindToFrontService() {
         // This function ensures the service is started in the foreground
         // and then binds to it.
         val intent = Intent(this, FrontService::class.java).apply {
             action = FrontService.ACTION_START
         }
-
         // Start the service in foreground mode
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
         } else {
             startService(intent)
         }
-
         // Bind to the service
         bindService(intent, connection, Context.BIND_AUTO_CREATE)
     }
-
     private fun unbindAndStopLocationService() {
         val intent = Intent(this, FrontService::class.java).apply {
             action = FrontService.ACTION_STOP
@@ -209,7 +212,6 @@ class MainActivity : ComponentActivity() {
         }
         serviceState = ServiceState() // Reset UI immediately
     }
-
 
     @RequiresApi(Build.VERSION_CODES.P) // Use Tiramisu for permissions
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -223,7 +225,6 @@ class MainActivity : ComponentActivity() {
                 val systemUiController = rememberSystemUiController()
                 val surfaceVariantColor = MaterialTheme.colorScheme.surface
                 val useDarkIcons = surfaceVariantColor.luminance() > 0.5
-
                 SideEffect {
                     systemUiController.setStatusBarColor(
                         color = surfaceVariantColor,
@@ -233,15 +234,32 @@ class MainActivity : ComponentActivity() {
                     window.navigationBarDividerColor = surfaceVariantColor.toArgb()
                 }
 
+                // --- NEW: Conditionally display the AlertDialog ---
+                if (showLocationDisabledDialog) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            // We don't want the user to dismiss this dialog
+                            // as the app is not functional without location.
+                        },
+                        title = { Text(text = "Location service has been turned off") },
+                        text = { Text(text = "This application requires the location service to be enabled in order to function properly. Please enable it in the system settings.") },
+                        confirmButton = {
+                            Button(onClick = { openLocationSettings() }) {
+                                Text("Go to Settings")
+                            }
+                        }
+                    )
+                }
+
                 Surface(
                     color = MaterialTheme.colorScheme.surface
                 ) {
                     val navController = rememberNavController()
-
                     NavHost(
                         navController = navController,
                         startDestination = MainActivityDestinations.Main.route
                     ) {
+                        // ... (Rest of your NavHost code remains unchanged)
                         composable(MainActivityDestinations.Main.route) {
                             MainScreen(
                                 context = this@MainActivity,

@@ -133,7 +133,6 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
     // 持久化的变量
 
 
-
     companion object {
         const val ACTION_START = "com.example.wimudatasampler.action.START"
         const val ACTION_STOP = "com.example.wimudatasampler.action.STOP"
@@ -187,7 +186,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                             if (_serviceState.value.isLocatingStarted) {
                                 locatingServiceScope.launch { onLatestWifiResultChanged(wifiScanningResults.toList()) }
                             }
-                            _serviceState.value.wifiScanningInfo = timer.wifiScanningInfo
+                            _serviceState.update { it.copy(wifiScanningInfo = timer.wifiScanningInfo) }
                         }
                     } else {
                         Log.e("RECEIVED", "No Wi-Fi scan results found")
@@ -278,23 +277,22 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
     }
 
     fun updateWifiSamplingCycles(newValue: Float) {
-        _serviceState.value.wifiSamplingCycles = newValue
+        _serviceState.update { it.copy(wifiSamplingCycles = newValue) }
     }
 
     fun updateSensorSamplingCycles(newValue: Float) {
-        _serviceState.value.sensorSamplingCycles = newValue
+        _serviceState.update { it.copy(sensorSamplingCycles = newValue) }
     }
 
     fun updateSaveDirectory(newValue: String) {
-        _serviceState.value.saveDirectory = newValue
+        _serviceState.update { it.copy(saveDirectory = newValue) }
     }
 
     fun updateIsCollectTraining(newValue: Boolean) {
-        _serviceState.value.isCollectTraining = newValue
+        _serviceState.update { it.copy(isCollectTraining = newValue) }
     }
 
     fun startCollectingLabelData(indexOfLabel: Int, labelPoint: Offset, startTimestamp: Long) {
-        _serviceState.value.numOfLabelSampling = indexOfLabel
         if (_serviceState.value.isCollectTraining) {
             timer.setSavingDir("Train")
         } else {
@@ -304,7 +302,14 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
             SimpleDateFormat("yyyy-MM-dd HH-mm-ss", Locale.getDefault()).format(
                 startTimestamp
             )
-        _serviceState.value.saveDirectory = "Waypoint-${indexOfLabel + 1}-$currentTimeInText"
+        val newSaveDirectory = "Waypoint-${indexOfLabel + 1}-$currentTimeInText"
+        _serviceState.update {
+            it.copy(
+                numOfLabelSampling = indexOfLabel,
+                saveDirectory = newSaveDirectory,
+                isSampling = true
+            )
+        }
         samplingServiceScope.launch {
             timer.runSensorTaskAtFrequency(
                 sensorManager = motionSensorManager,
@@ -323,7 +328,6 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
             )
         }
         motionSensorManager.startMonitoring(this@FrontService)
-        _serviceState.value.isSampling = true
     }
 
     fun startCollectingUnLabelData(startTimestamp: Long) {
@@ -332,7 +336,16 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
             SimpleDateFormat("yyyy-MM-dd HH-mm-ss", Locale.getDefault()).format(
                 startTimestamp
             )
-        _serviceState.value.saveDirectory = "Trajectory-$currentTimeInText"
+
+        val newSaveDirectory = "Trajectory-$currentTimeInText"
+
+        _serviceState.update {
+            it.copy(
+                saveDirectory = newSaveDirectory,
+                isSampling = true
+            )
+        }
+
         samplingServiceScope.launch {
             timer.runSensorTaskAtFrequency(
                 sensorManager = motionSensorManager,
@@ -350,12 +363,12 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
             )
         }
         motionSensorManager.startMonitoring(this@FrontService)
-        _serviceState.value.isSampling = true
         publishData("ack", data = AckData(deviceId = deviceId, ackInfo = "sample_on"))
     }
 
     fun stopCollectingData() {
-        _serviceState.value.isSampling = false
+        Log.e("STOP SAMPLING", "HERE")
+        _serviceState.update { it.copy(isSampling = false) }
         timer.stopTask()
         samplingServiceJob.cancelChildren()
         if (!_serviceState.value.isLocatingStarted && !_serviceState.value.isLoadingStarted) {
@@ -365,30 +378,30 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
     }
 
     fun enableImuSensor() {
-        _serviceState.value.isImuEnabled = true
+        _serviceState.update { it.copy(isImuEnabled = true) }
     }
 
     fun disableImuSensor() {
-        _serviceState.value.isImuEnabled = false
+        _serviceState.update { it.copy(isImuEnabled = false) }
     }
 
     fun enableOwnStepCounter() {
-        _serviceState.value.isMyStepDetectorEnabled = true
+        _serviceState.update { it.copy(isMyStepDetectorEnabled = true) }
     }
 
     fun disableOwnStepCounter() {
-        _serviceState.value.isMyStepDetectorEnabled = false
+        _serviceState.update { it.copy(isMyStepDetectorEnabled = false) }
     }
 
     fun startLocating() {
-        _serviceState.value.isLocatingStarted = true
+        _serviceState.update { it.copy(isLocatingStarted = true) }
         motionSensorManager.startMonitoring(this@FrontService)
         locatingServiceScope.launch {
             while (isServiceRunning) {
                 val success = wifiManager.startScan()
                 Log.d("StartLocating", "Triggered")
                 if (success) {
-                    _serviceState.value.isLoadingStarted = true
+                    _serviceState.update { it.copy(isLoadingStarted = true) }
                 }
                 delay((period * 1000).toLong())
             }
@@ -398,7 +411,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
 
     fun refreshLocating() {
         if (wifiOffset != null) {
-            _serviceState.value.targetOffset = wifiOffset!!
+            _serviceState.update { it.copy(targetOffset = wifiOffset!!) }
         }
     }
 
@@ -409,8 +422,12 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
             motionSensorManager.stopMonitoring()
         }
         Log.d("DEBUG", "TRIGGER_STOP_LOC")
-        _serviceState.value.isLoadingStarted = false
-        _serviceState.value.isLocatingStarted = false
+        _serviceState.update {
+            it.copy(
+                isLoadingStarted = false,
+                isLocatingStarted = false
+            )
+        }
         publishData("ack", data = AckData(deviceId = deviceId, ackInfo = "inference_off"))
     }
 
@@ -534,7 +551,15 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                             validPostureCheck(_serviceState.value.pitch, _serviceState.value.roll)
                         )
                     )
-                    _serviceState.value.targetOffset = Offset(_serviceState.value.targetOffset.x + dx, _serviceState.value.targetOffset.y + dy)
+                    _serviceState.update {
+                        it.copy(
+                            imuOffset = Offset(
+                                _serviceState.value.imuOffset!!.x + dx,
+                                _serviceState.value.imuOffset!!.y + dy
+                            ),
+                            targetOffset = _serviceState.value.targetOffset
+                        )
+                    }
                 }
             }
         }
@@ -560,7 +585,11 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                             validPostureCheck(_serviceState.value.pitch, _serviceState.value.roll)
                         )
                     )
-                    _serviceState.value.targetOffset = Offset(_serviceState.value.targetOffset.x + dx, _serviceState.value.targetOffset.y + dy)
+                    _serviceState.update {
+                        it.copy(
+                            targetOffset = Offset(_serviceState.value.targetOffset.x + dx, _serviceState.value.targetOffset.y + dy)
+                        )
+                    }
                 }
             }
         }
@@ -661,9 +690,17 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
 
     override fun onGetInferenceResult(x: Float, y: Float) {
         Log.e("TARGET OFFSET", "$x, $y")
-        _serviceState.value.targetOffset = Offset(x, y)
+        _serviceState.update {
+            it.copy(
+                targetOffset = Offset(x, y)
+            )
+        }
         this.lastOffset = Offset(x, y)
-        _serviceState.value.imuOffset = Offset(0f, 0f)
+        _serviceState.update {
+            it.copy(
+                imuOffset = Offset(0f, 0f)
+            )
+        }
     }
 
     override fun onUnknownCommand(command: String) {
