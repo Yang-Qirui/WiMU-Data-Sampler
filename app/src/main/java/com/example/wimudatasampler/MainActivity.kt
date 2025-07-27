@@ -267,7 +267,7 @@ class MainActivity : ComponentActivity() {
                                 //ViewModel
                                 mapViewModel = mapViewModel,
                                 //UI State
-                                jDMode = false,
+                                jDMode = true,
                                 isCollectTraining = serviceState.isCollectTraining,
                                 isSampling = serviceState.isSampling,
                                 isLocatingStarted = serviceState.isLocatingStarted,
