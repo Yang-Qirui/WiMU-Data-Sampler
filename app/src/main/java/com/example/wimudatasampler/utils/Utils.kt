@@ -5,9 +5,12 @@ import android.content.Context
 import android.os.Build
 import android.provider.Settings
 import androidx.annotation.RequiresApi
+import androidx.compose.ui.geometry.Offset
 import kotlinx.serialization.Serializable
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 
 data class Quadruple<A, B, C, D> (
     val first: A,
@@ -230,3 +233,23 @@ data class UploadBatchManifest(
     val path_name: String,
     val data_type: String
 )
+
+fun calculateTotalDisplacement(directions: List<Float>, strideLength: Float): Offset {
+    var totalDx = 0.0
+    var totalDy = 0.0
+
+    for (angleRadians in directions) {
+        // 将角度转换为弧度，因为三角函数需要用弧度
+        // 根据三角函数计算这一步的dx和dy
+        // dx = L * sin(θ)  (东西方向)
+        // dy = L * cos(θ)  (南北方向)
+        val dx = -strideLength * cos(angleRadians.toDouble())
+        val dy = -strideLength * sin(angleRadians.toDouble())
+
+        // 累加总位移
+        totalDx += dx
+        totalDy += dy
+    }
+
+    return Offset(totalDx.toFloat(), totalDy.toFloat())
+}

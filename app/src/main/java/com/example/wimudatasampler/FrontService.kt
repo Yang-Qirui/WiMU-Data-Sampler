@@ -17,6 +17,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -29,7 +30,7 @@ import com.example.wimudatasampler.network.MqttClient
 import com.example.wimudatasampler.network.MqttClient.AckData
 import com.example.wimudatasampler.network.MqttClient.publishData
 import com.example.wimudatasampler.utils.CoroutineLockIndexedList
-import com.example.wimudatasampler.utils.DeviceIdManager
+import com.example.wimudatasampler.utils.calculateTotalDisplacement
 import com.example.wimudatasampler.utils.MqttCommandListener
 import com.example.wimudatasampler.utils.Quadruple
 import com.example.wimudatasampler.utils.SensorUtils
@@ -50,8 +51,11 @@ import kotlin.math.sqrt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.concurrent.CopyOnWriteArrayList
 
 data class ServiceState(
     //UI State
@@ -60,7 +64,7 @@ data class ServiceState(
     var isLocatingStarted:Boolean = false,
     var isLoadingStarted:Boolean = false,
     var isImuEnabled:Boolean=true,
-    var isMyStepDetectorEnabled:Boolean=false,
+    var isMyStepDetectorEnabled:Boolean=true, //TODO: use own step detector
     //Sampling Page Data
     val yaw: Float = 0.0F,
     val pitch: Float = 0.0F,
@@ -121,6 +125,8 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
     var beta by mutableFloatStateOf(0.9f)
     var estimatedStrideLength by mutableFloatStateOf(0f)
     var estimatedStrides = mutableListOf<Float>()
+    private val directionBuffer = CopyOnWriteArrayList<Float>()
+    private val bufferMutex = Mutex()
 
     var sysNoise = 1f
     var obsNoise = 3f
@@ -149,6 +155,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
 
     override fun onBind(intent: Intent?): IBinder = binder
 
+    @RequiresApi(Build.VERSION_CODES.N_MR1)
     override fun onCreate() {
         super.onCreate()
         serviceScope.launch {
@@ -433,53 +440,45 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
 
     private fun onLatestWifiResultChanged(newValue: List<String>) {
         val wifiTimestamp = newValue[0].trimIndent().split(" ")[0].toLong()
-        val closestRecord = imuOffsetHistory.get(wifiTimestamp)
-        val latestImuOffset = closestRecord?.second
-        val latestTimestamp = closestRecord?.third
-        val latestValidation = closestRecord?.fourth
         try {
-            var inputImuOffset = latestImuOffset ?: Offset(0f, 0f)
-            if (lastMag > 80 || (latestValidation != null && !latestValidation)) {
-//                sysNoise = 4f
-                inputImuOffset = Offset(0f, 0f)
-            }
-            if (!firstStart) {
-                MqttClient.publishData(
-                    topicSuffix = "inference",
-                    data = MqttClient.InferenceData(
-                        deviceId = getDeviceId(this.applicationContext),
-                        wifiList = newValue,
-                        imuOffset = Pair(inputImuOffset.x, inputImuOffset.y),
-                        sysNoise = sysNoise,
-                        obsNoise = obsNoise,
+//            var inputImuOffset = latestImuOffset ?: Offset(0f, 0f)
+//            if (lastMag > 80 || (latestValidation != null && !latestValidation)) {
+////                sysNoise = 4f
+//                inputImuOffset = Offset(0f, 0f)
+//            }
+
+            serviceScope.launch {
+                if (!firstStart) {
+                    val directionSnapshot = bufferMutex.withLock {
+                        directionBuffer.toList().also {
+                            directionBuffer.clear()
+                        }
+                    }
+                    val displacement = calculateTotalDisplacement(directionSnapshot, stride)
+                    _serviceState.update { it.copy(imuOffset = displacement) }
+                    publishData(
+                        topicSuffix = "inference",
+                        data = MqttClient.InferenceData(
+                            deviceId = deviceId,
+                            wifiList = newValue,
+                            imuOffset = Pair(displacement.x, displacement.y),
+                            sysNoise = sysNoise,
+                            obsNoise = obsNoise,
+                        )
                     )
-                )
-//                NetworkClient.fetchData(
-//                    url = url,
-//                    uuid = uuid,
-//                    wifiResult = newValue,
-//                    imuInput = inputImuOffset,
-//                    sysNoise = sysNoise,
-//                    obsNoise = obsNoise
-//                )
-            } else {
-                MqttClient.publishData(
-                    topicSuffix = "inference",
-                    data = MqttClient.InferenceData(
-                        deviceId = getDeviceId(this.applicationContext),
-                        wifiList = newValue,
-                        imuOffset = null,
-                        sysNoise = sysNoise,
-                        obsNoise = obsNoise,
+
+                } else {
+                    publishData(
+                        topicSuffix = "inference",
+                        data = MqttClient.InferenceData(
+                            deviceId = deviceId,
+                            wifiList = newValue,
+                            imuOffset = null,
+                            sysNoise = sysNoise,
+                            obsNoise = obsNoise,
+                        )
                     )
-                )
-//                NetworkClient.reset(
-//                    url = url,
-//                    uuid = uuid,
-//                    wifiResult = newValue,
-//                    sysNoise = sysNoise,
-//                    obsNoise = obsNoise
-//                )
+                }
             }
 //            Log.d("current pos", response.bodyAsText())
 //            val coordinate = Json.decodeFromString<Coordinate>(response.bodyAsText())
@@ -516,7 +515,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
         val newYaw = Math.toDegrees(orientations[0].toDouble()).toFloat() + azimuthOffset
         val newPitch = Math.toDegrees(orientations[1].toDouble()).toFloat()
         val newRoll = Math.toDegrees(orientations[2].toDouble()).toFloat()
-        _serviceState.update { it.copy(yaw = newYaw, pitch = newPitch, roll = newRoll) }
+        _serviceState.update { it.copy(yaw = newYaw, pitch = newPitch, roll = newRoll, userHeading = newYaw) }
 //        val recentInvalidCount = eulerHistory.checkAll()
 //        enableImu = if (recentInvalidCount / eulerHistory.getSize() > 0.6) {
 //            false
@@ -531,35 +530,40 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
 //            Log.d("STEP COUNT", "$stepCountHistory, $stepCount, $lastStepCountFromMyStepDetector")
             if (_serviceState.value.imuOffset != null) {
                 val currentYaw = _serviceState.value.yaw
-                val dx = -stride * cos(Math.toRadians(currentYaw.toDouble()).toFloat())
-                val dy = -stride * sin(Math.toRadians(currentYaw.toDouble()).toFloat())
+                val azimuth = Math.toRadians(currentYaw.toDouble()).toFloat()
+                val dx = -stride * cos(azimuth)
+                val dy = -stride * sin(azimuth)
                 distFromLastPos += stride
-                val x = _serviceState.value.imuOffset!!.x + dx
-                val y = _serviceState.value.imuOffset!!.y + dy
-                _serviceState.value.imuOffset = Offset(x, y)
 
-                if (isServiceRunning && _serviceState.value.isImuEnabled && validPostureCheck(
-                        _serviceState.value.pitch,
-                        _serviceState.value.roll
-                    )
-                ) {
-                    imuOffsetHistory.put(
-                        Quadruple(
-                            System.currentTimeMillis(),
-                            _serviceState.value.imuOffset!!,
-                            stepCountHistory,
-                            validPostureCheck(_serviceState.value.pitch, _serviceState.value.roll)
-                        )
-                    )
-                    _serviceState.update {
-                        it.copy(
-                            imuOffset = Offset(
-                                _serviceState.value.imuOffset!!.x + dx,
-                                _serviceState.value.imuOffset!!.y + dy
-                            ),
-                            targetOffset = _serviceState.value.targetOffset
-                        )
+//                if (isServiceRunning && _serviceState.value.isImuEnabled && validPostureCheck(
+//                        _serviceState.value.pitch,
+//                        _serviceState.value.roll
+//                    )
+//                ) {
+//                    imuOffsetHistory.put(
+//                        Quadruple(
+//                            System.currentTimeMillis(),
+//                            _serviceState.value.imuOffset!!,
+//                            stepCountHistory,
+//                            validPostureCheck(_serviceState.value.pitch, _serviceState.value.roll)
+//                        )
+//                    )
+//
+//                }
+                if (isServiceRunning && _serviceState.value.isImuEnabled) {
+                    serviceScope.launch {
+                        bufferMutex.withLock {
+                            directionBuffer.add(azimuth)
+                        }
                     }
+//                    _serviceState.update {
+//                        it.copy(
+//                            targetOffset = Offset(
+//                                _serviceState.value.targetOffset.x + dx,
+//                                _serviceState.value.targetOffset.y + dy
+//                            )
+//                        )
+//                    }
                 }
             }
         }
@@ -570,26 +574,40 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
         if (_serviceState.value.isMyStepDetectorEnabled) {
             stepCountHistory += 1
             if (_serviceState.value.imuOffset != null) {
-                val dx = -stride * cos(Math.toRadians(_serviceState.value.yaw.toDouble()).toFloat())
-                val dy = -stride * sin(Math.toRadians(_serviceState.value.yaw.toDouble()).toFloat())
+                val azimuth = Math.toRadians(_serviceState.value.yaw.toDouble()).toFloat()
+                val dx = -stride * cos(azimuth)
+                val dy = -stride * sin(azimuth)
                 distFromLastPos += stride
-                val x = _serviceState.value.imuOffset!!.x + dx // north is negative axis
-                val y = _serviceState.value.imuOffset!!.y + dy
-                _serviceState.value.imuOffset = Offset(x, y)
-                if (isServiceRunning && _serviceState.value.isMyStepDetectorEnabled && validPostureCheck(_serviceState.value.pitch, _serviceState.value.roll)) {
-                    imuOffsetHistory.put(
-                        Quadruple(
-                            System.currentTimeMillis(),
-                            _serviceState.value.imuOffset!!,
-                            stepCountHistory,
-                            validPostureCheck(_serviceState.value.pitch, _serviceState.value.roll)
-                        )
-                    )
-                    _serviceState.update {
-                        it.copy(
-                            targetOffset = Offset(_serviceState.value.targetOffset.x + dx, _serviceState.value.targetOffset.y + dy)
-                        )
+//                if (isServiceRunning && _serviceState.value.isMyStepDetectorEnabled && validPostureCheck(_serviceState.value.pitch, _serviceState.value.roll)) {
+//                    imuOffsetHistory.put(
+//                        Quadruple(
+//                            System.currentTimeMillis(),
+//                            _serviceState.value.imuOffset!!,
+//                            stepCountHistory,
+//                            validPostureCheck(_serviceState.value.pitch, _serviceState.value.roll)
+//                        )
+//                    )
+//                    _serviceState.update {
+//                        it.copy(
+//                            targetOffset = Offset(_serviceState.value.targetOffset.x + dx, _serviceState.value.targetOffset.y + dy)
+//                        )
+//                    }
+//                }
+                // TODO: currently disable gesture check
+                if (isServiceRunning && _serviceState.value.isImuEnabled) {
+                    serviceScope.launch {
+                        bufferMutex.withLock {
+                            directionBuffer.add(azimuth)
+                        }
                     }
+//                    _serviceState.update {
+//                        it.copy(
+//                            targetOffset = Offset(
+//                                _serviceState.value.targetOffset.x + dx,
+//                                _serviceState.value.targetOffset.y + dy
+//                            )
+//                        )
+//                    }
                 }
             }
         }
@@ -690,16 +708,18 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
 
     override fun onGetInferenceResult(x: Float, y: Float) {
         Log.e("TARGET OFFSET", "$x, $y")
+        this.lastOffset = Offset(x, y)
         _serviceState.update {
             it.copy(
                 targetOffset = Offset(x, y)
             )
         }
-        this.lastOffset = Offset(x, y)
-        _serviceState.update {
-            it.copy(
-                imuOffset = Offset(0f, 0f)
-            )
+        if (_serviceState.value.imuOffset == null) {
+            _serviceState.update {
+                it.copy(
+                    imuOffset = Offset(0f, 0f)
+                )
+            }
         }
     }
 

@@ -29,7 +29,6 @@ import com.example.wimudatasampler.Config.MQTT_SERVER_URI
 import com.example.wimudatasampler.Config.PREFS_NAME
 import com.example.wimudatasampler.utils.getDeviceId
 import com.example.wimudatasampler.utils.getDeviceName
-import info.mqtt.android.service.Ack
 
 object MqttClient {
 
@@ -49,6 +48,7 @@ object MqttClient {
         commandListener = listener
     }
 
+    @RequiresApi(Build.VERSION_CODES.N_MR1)
     fun initialize(context: Context) {
         if (this::appContext.isInitialized) {
             Log.w(TAG, "MqttClient is already initialized.")
@@ -61,6 +61,7 @@ object MqttClient {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.N_MR1)
     private suspend fun connect() {
         if (pahoMqClient?.isConnected == true) {
             Log.d(TAG, "Already connected.")

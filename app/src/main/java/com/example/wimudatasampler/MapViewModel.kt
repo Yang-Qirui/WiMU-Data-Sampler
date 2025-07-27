@@ -61,12 +61,12 @@ class MapViewModel @Inject constructor(
             Log.d("MapViewModel", "Database is empty. Initializing default map.")
             try {
                 // 1. Define the default map's properties
-                val defaultMapFileName = "default_map.png"
-                val defaultMapName = "Sample Map"
-                val defaultMapMeters = 100.0f // Example value, change as needed
+                val defaultMapFileName = "jd_langfang_test.jpg"
+                val defaultMapName = "JD Langfang Testing"
+                val defaultMapMeters = 168.0f // Example value, change as needed
 
                 // 2. Copy the drawable resource to the app's storage
-                val drawableResourceId = R.drawable.default_map_image // <-- IMPORTANT: Replace with your actual drawable name
+                val drawableResourceId = R.drawable.jd_langfang_test // <-- IMPORTANT: Replace with your actual drawable name
                 val inputStream = context.resources.openRawResource(drawableResourceId)
                 val imageFolder = getImageFolderPath(context) // Assuming you have this helper function
                 val destinationFile = File(imageFolder, defaultMapFileName)
