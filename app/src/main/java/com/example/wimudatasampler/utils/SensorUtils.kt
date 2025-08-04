@@ -130,6 +130,7 @@ class SensorUtils(context: Context) : SensorEventListener {
                 lastAccChanged = true
             }
             Sensor.TYPE_STEP_DETECTOR -> {
+                Log.d("Triggered step detector", "Debug")
                 if (event.values[0] == 1.0f) {
                     val ts = System.currentTimeMillis()
                     lastStepTimestamp = ts

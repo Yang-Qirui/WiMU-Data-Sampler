@@ -64,7 +64,7 @@ data class ServiceState(
     var isLocatingStarted:Boolean = false,
     var isLoadingStarted:Boolean = false,
     var isImuEnabled:Boolean=true,
-    var isMyStepDetectorEnabled:Boolean=true, //TODO: use own step detector
+    var isMyStepDetectorEnabled:Boolean=false, //TODO: use own step detector
     //Sampling Page Data
     val yaw: Float = 0.0F,
     val pitch: Float = 0.0F,
@@ -206,7 +206,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
 
         timer = TimerUtils(samplingServiceScope, {wifiScanningResults}, {wifiScanningResults.clear()}, { wifiManager.startScan() }, this@FrontService)
         motionSensorManager = SensorUtils(this@FrontService)
-        motionSensorManager.startMonitoring(this@FrontService)
+//        motionSensorManager.startMonitoring(this@FrontService)
     }
 
     override fun onDestroy() {
