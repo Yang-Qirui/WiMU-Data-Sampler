@@ -67,6 +67,8 @@ fun SettingScreen(
     obsNoise: Float,
     period: Float,
     url:String,
+    mqttServerUrl:String,
+    apiBaseUrl:String,
     azimuthOffset: Float,
     updateStride: (Float) ->Unit,
     updateBeta: (Float) ->Unit,
@@ -74,6 +76,8 @@ fun SettingScreen(
     updateObsNoise: (Float) -> Unit,
     updatePeriod: (Float) -> Unit,
     updateUrl:(String) -> Unit,
+    updateMqttServerUrl:(String) -> Unit,
+    updateApiBaseUrl:(String) -> Unit,
     updateAzimuthOffset:(Float) -> Unit
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
@@ -142,6 +146,8 @@ fun SettingScreen(
         var curObsNoise by remember { mutableStateOf(obsNoise.toString()) }
         var curPeriod by remember { mutableStateOf(period.toString()) }
         var curUrl by remember { mutableStateOf(url) }
+        var curMqttServerUrl by remember { mutableStateOf(mqttServerUrl) }
+        var curApiBaseUrl by remember { mutableStateOf(apiBaseUrl) }
         var curAzimuthOffset by remember { mutableStateOf(azimuthOffset.toString()) }
 
         Column(
@@ -207,6 +213,64 @@ fun SettingScreen(
                     value = curUrl,
                     onValueChange = { value ->
                         curUrl = value
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("") }
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .padding(8.dp)
+            ) {
+                Text(
+                    text = "MQTT SERVER URL",
+                    style = TextStyle(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    ),
+                    fontFamily = styleScriptFamily,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp)
+                )
+                OutlinedTextField(
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Done
+                    ),
+                    value = curMqttServerUrl,
+                    onValueChange = { value ->
+                        curMqttServerUrl = value
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("") }
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .padding(8.dp)
+            ) {
+                Text(
+                    text = "API BASE URL",
+                    style = TextStyle(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    ),
+                    fontFamily = styleScriptFamily,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp)
+                )
+                OutlinedTextField(
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Done
+                    ),
+                    value = curApiBaseUrl,
+                    onValueChange = { value ->
+                        curApiBaseUrl = value
                     },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("") }
@@ -397,6 +461,8 @@ fun SettingScreen(
                                 obsNoise = curObsNoise.toFloatOrNull() ?: obsNoise,
                                 period = curPeriod.toFloatOrNull() ?: period,
                                 url = curUrl,
+                                mqttServerUrl = curMqttServerUrl,
+                                apiBaseUrl = curApiBaseUrl,
                                 azimuthOffset = curAzimuthOffset.toFloatOrNull()?:azimuthOffset
                             )
                             updateStride(curStride.toFloatOrNull() ?: stride)
@@ -405,6 +471,8 @@ fun SettingScreen(
                             updateObsNoise(curObsNoise.toFloatOrNull() ?: obsNoise)
                             updatePeriod(curPeriod.toFloatOrNull() ?: period)
                             updateUrl(curUrl)
+                            updateMqttServerUrl(curMqttServerUrl)
+                            updateApiBaseUrl(curApiBaseUrl)
                             updateAzimuthOffset(curAzimuthOffset.toFloatOrNull() ?: azimuthOffset)
                         } catch (e: Exception) {
                             Log.e("SAVE", "Save failed: ${e.message}")
@@ -420,6 +488,8 @@ fun SettingScreen(
                         obsNoise != curObsNoise.toFloatOrNull() ||
                         period != curPeriod.toFloatOrNull()) ||
                         url != curUrl ||
+                        mqttServerUrl != curMqttServerUrl ||
+                        apiBaseUrl != curApiBaseUrl ||
                         azimuthOffset != curAzimuthOffset.toFloatOrNull()
             ) {
                 Text("SAVE")
@@ -436,6 +506,8 @@ suspend fun saveUserPreferences(
     obsNoise: Float,
     period: Float,
     url: String,
+    mqttServerUrl:String,
+    apiBaseUrl:String,
     azimuthOffset: Float
 ) {
     context.dataStore.edit { preferences ->
@@ -449,6 +521,8 @@ suspend fun saveUserPreferences(
         preferences[UserPreferencesKeys.PERIOD] = period
 
         preferences[UserPreferencesKeys.URL] = url
+        preferences[UserPreferencesKeys.MQTT_SERVER_URL] = mqttServerUrl
+        preferences[UserPreferencesKeys.API_BASE_URL] = apiBaseUrl
 
         preferences[UserPreferencesKeys.AZIMUTH_OFFSET] = azimuthOffset
     }

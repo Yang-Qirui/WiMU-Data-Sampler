@@ -22,10 +22,8 @@ import org.eclipse.paho.client.mqttv3.*
 import info.mqtt.android.service.MqttAndroidClient
 import kotlinx.serialization.json.Json.Default.decodeFromString
 import kotlinx.serialization.json.jsonPrimitive
-import com.example.wimudatasampler.Config.API_BASE_URL
 import com.example.wimudatasampler.Config.KEY_MQTT_PASSWORD
 import com.example.wimudatasampler.Config.KEY_MQTT_USERNAME
-import com.example.wimudatasampler.Config.MQTT_SERVER_URI
 import com.example.wimudatasampler.Config.PREFS_NAME
 import com.example.wimudatasampler.utils.getDeviceId
 import com.example.wimudatasampler.utils.getDeviceName
@@ -49,7 +47,7 @@ object MqttClient {
     }
 
     @RequiresApi(Build.VERSION_CODES.N_MR1)
-    fun initialize(context: Context) {
+    fun initialize(context: Context, mqttServerUrl: String, apiBaseUrl:String) {
         if (this::appContext.isInitialized) {
             Log.w(TAG, "MqttClient is already initialized.")
             return
@@ -57,31 +55,31 @@ object MqttClient {
         appContext = context.applicationContext
         prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         CoroutineScope(Dispatchers.IO).launch {
-            connect()
+            connect(mqttServerUrl = mqttServerUrl, apiBaseUrl = apiBaseUrl)
         }
     }
 
     @RequiresApi(Build.VERSION_CODES.N_MR1)
-    private suspend fun connect() {
+    private suspend fun connect(mqttServerUrl:String, apiBaseUrl:String) {
         if (pahoMqClient?.isConnected == true) {
             Log.d(TAG, "Already connected.")
             return
         }
-        val creds = getCredentialsFromPrefs() ?: fetchCredentialsFromServer()?.also {
+        val creds = getCredentialsFromPrefs() ?: fetchCredentialsFromServer(apiBaseUrl = apiBaseUrl)?.also {
             saveCredentialsToPrefs(it)
         }
         if (creds == null) {
             Log.e(TAG, "Failed to get credentials. Aborting connection.")
             return
         }
-        setupAndConnectMqtt(creds)
+        setupAndConnectMqtt(credentials = creds, mqttServerUrl = mqttServerUrl)
     }
 
-    private fun setupAndConnectMqtt(credentials: MqttCredentials) {
+    private fun setupAndConnectMqtt(credentials: MqttCredentials, mqttServerUrl:String) {
         val clientId = getDeviceId(appContext)
 
         // 1. 创建 Paho MqttAndroidClient 实例
-        pahoMqClient = MqttAndroidClient(appContext, MQTT_SERVER_URI, clientId)
+        pahoMqClient = MqttAndroidClient(appContext, mqttServerUrl, clientId)
 
         // 2. 设置回调来处理连接丢失和消息到达
         pahoMqClient?.setCallback(object : MqttCallbackExtended {
@@ -175,14 +173,14 @@ object MqttClient {
     // --- 网络和辅助方法保持不变 ---
 
     @RequiresApi(Build.VERSION_CODES.N_MR1)
-    private suspend fun fetchCredentialsFromServer(): MqttCredentials? {
+    private suspend fun fetchCredentialsFromServer(apiBaseUrl:String): MqttCredentials? {
         return try {
             val deviceId = getDeviceId(appContext)
             val deviceName = getDeviceName(appContext)
             Log.d("deviceName", deviceName)
             val requestBody = RegisterDeviceRequest(deviceId, deviceName)
             val jsonStringBody = Json.encodeToString(requestBody)
-            val response = ktorHttpClient.post("$API_BASE_URL/register") {
+            val response = ktorHttpClient.post("$apiBaseUrl/register") {
                 contentType(ContentType.Application.Json)
                 setBody(jsonStringBody)
             }

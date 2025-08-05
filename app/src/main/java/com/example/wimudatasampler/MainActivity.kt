@@ -361,6 +361,8 @@ class MainActivity : ComponentActivity() {
                                     obsNoise = service.obsNoise,
                                     period = service.period,
                                     url = service.url,
+                                    mqttServerUrl = service.mqttServerUrl,
+                                    apiBaseUrl = service.apiBaseUrl,
                                     azimuthOffset = service.azimuthOffset,
                                     updateStride = { newStride ->
                                         service.stride = newStride
@@ -379,6 +381,12 @@ class MainActivity : ComponentActivity() {
                                     },
                                     updateUrl = { newUrl ->
                                         service.url = newUrl
+                                    },
+                                    updateMqttServerUrl = { newUrl ->
+                                        service.mqttServerUrl = newUrl
+                                    },
+                                    updateApiBaseUrl = { newUrl ->
+                                        service.apiBaseUrl = newUrl
                                     },
                                     updateAzimuthOffset = { newAzimuthOffset ->
                                         service.azimuthOffset = newAzimuthOffset

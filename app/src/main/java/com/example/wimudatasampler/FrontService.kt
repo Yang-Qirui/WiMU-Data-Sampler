@@ -26,6 +26,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.geometry.Offset
 import androidx.core.app.NotificationCompat
+import com.example.wimudatasampler.Config.API_BASE_URL
+import com.example.wimudatasampler.Config.MQTT_SERVER_URI
 import com.example.wimudatasampler.network.MqttClient
 import com.example.wimudatasampler.network.MqttClient.AckData
 import com.example.wimudatasampler.network.MqttClient.publishData
@@ -135,9 +137,10 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
     var period = 5f
 
     var url = "http://limcpu1.cse.ust.hk:7860"
+    var mqttServerUrl = MQTT_SERVER_URI
+    var apiBaseUrl = API_BASE_URL
     var azimuthOffset = 90f
     // 持久化的变量
-
 
     companion object {
         const val ACTION_START = "com.example.wimudatasampler.action.START"
@@ -166,11 +169,12 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                 obsNoise = preferences[UserPreferencesKeys.OBS_NOISE] ?: obsNoise
 
                 url = preferences[UserPreferencesKeys.URL] ?:url
-
+                mqttServerUrl = preferences[UserPreferencesKeys.MQTT_SERVER_URL] ?:mqttServerUrl
+                apiBaseUrl = preferences[UserPreferencesKeys.API_BASE_URL] ?:apiBaseUrl
                 azimuthOffset = preferences[UserPreferencesKeys.AZIMUTH_OFFSET] ?: azimuthOffset
             }
         }
-        MqttClient.initialize(this)
+        MqttClient.initialize(this, mqttServerUrl = mqttServerUrl, apiBaseUrl = apiBaseUrl)
         MqttClient.setCommandListener(this)
         deviceId = getDeviceId(applicationContext)
         wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
@@ -376,7 +380,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
     fun stopCollectingData() {
         Log.e("STOP SAMPLING", "HERE")
         _serviceState.update { it.copy(isSampling = false) }
-        timer.stopTask()
+        timer.stopTask(apiBaseUrl = apiBaseUrl)
         samplingServiceJob.cancelChildren()
         if (!_serviceState.value.isLocatingStarted && !_serviceState.value.isLoadingStarted) {
             motionSensorManager.stopMonitoring()

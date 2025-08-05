@@ -26,7 +26,6 @@ import java.io.FileWriter
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
-import com.example.wimudatasampler.Config.API_BASE_URL
 import io.ktor.client.request.forms.InputProvider
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.post
@@ -276,15 +275,15 @@ class TimerUtils(
     }
 
     // 提供停止任务的方法
-    fun stopTask() {
+    fun stopTask(apiBaseUrl:String) {
         sensorJob?.cancel(cause = CancellationException("Sensor task finished"))
         wifiJob?.cancel(cause = CancellationException("wifi task finished"))
         isSensorTaskRunning.set(false)
         isWifiTaskRunning.set(false)
         uploadJob = uploadServiceScope.launch {
             uploadSampledData(
-                uploadMetaUrl = "$API_BASE_URL/upload_meta",
-                uploadFileUrl = "$API_BASE_URL/upload"
+                uploadMetaUrl = "$apiBaseUrl/upload_meta",
+                uploadFileUrl = "$apiBaseUrl/upload"
             )
         }
     }
