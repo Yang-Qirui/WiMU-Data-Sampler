@@ -1,7 +1,6 @@
 package com.example.wimudatasampler.utils
 
 import android.content.Context
-import android.media.ExifInterface
 import android.net.Uri
 import java.io.File
 import java.io.FileOutputStream
@@ -38,17 +37,6 @@ class ImageUtil {
                 false
             }
         }
-
-        fun deleteImageFromExternalStorage(
-            context: Context,
-            fileName: String,
-        ): Boolean {
-            val userDirPath = getImageFolderPath(context)
-            return File(userDirPath).run {
-                File(this, fileName).takeIf { it.exists() }?.delete() ?: false
-            }
-        }
-
         private fun copyStream(input: InputStream?, output: OutputStream) {
             val buffer = ByteArray(1024)
             var bytesRead: Int
@@ -56,29 +44,5 @@ class ImageUtil {
                 output.write(buffer, 0, bytesRead)
             }
         }
-
-        fun getResolutionInfo(
-            context: Context,
-            imageName: String
-        ): List<String> {
-            return try {
-                val folderPath = getImageFolderPath(context)
-                val fullPath = File(folderPath, imageName).absolutePath
-
-                val exif = ExifInterface(fullPath)
-
-                val imageWidth = exif.getAttribute(ExifInterface.TAG_IMAGE_WIDTH)
-                val imageHeight = exif.getAttribute(ExifInterface.TAG_IMAGE_LENGTH)
-
-                if (imageWidth != null && imageHeight != null) {
-                    listOf(imageWidth.toString(), imageHeight.toString())
-                } else {
-                    emptyList()
-                }
-            } catch (e: Exception) {
-                emptyList()
-            }
-        }
-
     }
 }

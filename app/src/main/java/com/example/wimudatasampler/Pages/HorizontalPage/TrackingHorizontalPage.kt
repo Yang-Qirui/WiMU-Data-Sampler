@@ -1,4 +1,4 @@
-package com.example.wimudatasampler.HorizontalPage
+package com.example.wimudatasampler.Pages.HorizontalPage
 
 import android.graphics.Paint
 import android.net.wifi.WifiManager

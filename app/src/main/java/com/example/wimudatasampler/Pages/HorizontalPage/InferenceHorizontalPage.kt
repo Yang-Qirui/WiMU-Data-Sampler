@@ -1,7 +1,9 @@
-package com.example.wimudatasampler.HorizontalPage
+package com.example.wimudatasampler.Pages.HorizontalPage
 
 
 import android.annotation.SuppressLint
+import android.graphics.Paint
+import android.util.Log
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.VectorConverter
@@ -60,6 +62,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.example.wimudatasampler.R
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -248,26 +251,26 @@ fun InferenceHorizontalPage(
                     dstSize = IntSize((mapWidthPixels).toInt(), (mapHeightPixels).toInt())
                 )
 
-                if (uiMode == NavUiMode.USER_POS_FIX_CENTER_DIR_FIX_UP.value) {
-
-                    drawUserMarker(
-                        jDMode = jDMode,
-                        position = userScreenPos,
-                        headingDegrees = userHeading ?: 0.0F,
-                        scale = scale,
-                        mainColor = onSecondaryContainerColor,
-                        secondColor = secondaryContainerColor
-                    )
-
-                } else {
-                    drawUserMarker(
-                        jDMode = jDMode,
-                        position = userScreenPos,
-                        headingDegrees = userHeading ?: 0.0F,
-                        scale = scale,
-                        mainColor = onSecondaryContainerColor,
-                        secondColor = secondaryContainerColor
-                    )
+                if (isLoadingStarted) {
+                    if (uiMode == NavUiMode.USER_POS_FIX_CENTER_DIR_FIX_UP.value) {
+                        drawUserMarker(
+                            jDMode = jDMode,
+                            position = userScreenPos,
+                            headingDegrees = userHeading ?: 0.0F,
+                            scale = scale,
+                            mainColor = onSecondaryContainerColor,
+                            secondColor = secondaryContainerColor
+                        )
+                    } else {
+                        drawUserMarker(
+                            jDMode = jDMode,
+                            position = userScreenPos,
+                            headingDegrees = userHeading ?: 0.0F,
+                            scale = scale,
+                            mainColor = onSecondaryContainerColor,
+                            secondColor = secondaryContainerColor
+                        )
+                    }
                 }
 
                 waypoints.forEachIndexed { index, waypoint ->
@@ -281,7 +284,7 @@ fun InferenceHorizontalPage(
                     )
 
                     drawContext.canvas.nativeCanvas.apply {
-                        val paint = android.graphics.Paint().apply {
+                        val paint = Paint().apply {
                             color = onTertiaryContainerColor.toArgb()
                             textSize = if (jDMode) {
                                 30 / scale.sp.toPx()
@@ -665,7 +668,7 @@ private fun DrawScope.drawUserMarker(
     drawPath(
         path = path,
         color = secondColor,
-        style = androidx.compose.ui.graphics.drawscope.Stroke(width = outerRadius - innerRadius)
+        style = Stroke(width = outerRadius - innerRadius)
     )
 
     // Outer glow

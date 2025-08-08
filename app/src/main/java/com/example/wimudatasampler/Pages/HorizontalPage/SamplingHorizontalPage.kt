@@ -1,9 +1,10 @@
-package com.example.wimudatasampler.HorizontalPage
+package com.example.wimudatasampler.Pages.HorizontalPage
 
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Paint
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.VectorConverter
@@ -70,7 +71,6 @@ import com.example.wimudatasampler.DataClass.MapModels
 import com.example.wimudatasampler.MapViewModel
 import com.example.wimudatasampler.R
 import com.example.wimudatasampler.utils.ImageUtil.Companion.getImageFolderPath
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -458,7 +458,7 @@ fun MarkLabelsWindow(
                     )
 
                     drawContext.canvas.nativeCanvas.apply {
-                        val paint = android.graphics.Paint().apply {
+                        val paint = Paint().apply {
                             color = onTertiaryContainerColor.toArgb()
                             textSize = if (jDMode) {
                                 30 / scale.sp.toPx()

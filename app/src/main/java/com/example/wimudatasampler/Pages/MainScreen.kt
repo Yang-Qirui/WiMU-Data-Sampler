@@ -50,8 +50,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.navigation.NavController
-import com.example.wimudatasampler.HorizontalPage.InferenceHorizontalPage
-import com.example.wimudatasampler.HorizontalPage.SamplingHorizontalPage
+import com.example.wimudatasampler.Pages.HorizontalPage.InferenceHorizontalPage
+import com.example.wimudatasampler.Pages.HorizontalPage.SamplingHorizontalPage
 import com.example.wimudatasampler.MapViewModel
 import com.example.wimudatasampler.R
 import com.example.wimudatasampler.navigation.MainActivityDestinations
@@ -158,7 +158,6 @@ fun MainScreen(
             )
         },
         floatingActionButton = {
-
             Column(
                 horizontalAlignment = Alignment.End,
                 modifier = Modifier.padding(bottom = 80.dp) // Add padding to lift the buttons above the main button
@@ -166,7 +165,6 @@ fun MainScreen(
             }
         }
     ) { innerPadding ->
-
         Column(
             modifier = Modifier
                 .padding(innerPadding)
