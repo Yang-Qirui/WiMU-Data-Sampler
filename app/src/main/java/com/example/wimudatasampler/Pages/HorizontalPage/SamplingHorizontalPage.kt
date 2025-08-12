@@ -351,9 +351,13 @@ fun MarkLabelsWindow(
     val pixelsPerMeter = mapWidthPixels / mapWidthMeters
     val metersPerPixel = mapWidthMeters / mapWidthPixels
 
-    val maoCenterPosOffsetMeters = Offset(
+    val mapLeftTopPosOffsetMeters = Offset(
         0.0F,
         0.0F,
+    )
+    val mapCenterPosOffsetMeters = Offset(
+        mapWidthPixels * metersPerPixel / 2f,
+        mapHeightPixels * metersPerPixel / 2f
     )
     // Transition state
     var scale by remember { mutableFloatStateOf(2f) }
@@ -362,9 +366,9 @@ fun MarkLabelsWindow(
     var lastMarkScreenPos by remember {
         mutableStateOf(
             if (waypoints.isNotEmpty()) {
-                (maoCenterPosOffsetMeters + waypoints.last()) * pixelsPerMeter
+                (mapLeftTopPosOffsetMeters + waypoints.last()) * pixelsPerMeter
             } else {
-                (maoCenterPosOffsetMeters + Offset.Zero) * pixelsPerMeter
+                mapCenterPosOffsetMeters * pixelsPerMeter
             }
         )
     }
@@ -385,7 +389,7 @@ fun MarkLabelsWindow(
         if (waypoints.isNotEmpty()) {
             waypoints.last().let { newPos ->
                 lastMarkPosAnimation.animateTo(
-                    targetValue = (maoCenterPosOffsetMeters + newPos) * pixelsPerMeter,
+                    targetValue = (mapLeftTopPosOffsetMeters + newPos) * pixelsPerMeter,
                     animationSpec = tween(500, easing = FastOutSlowInEasing)
                 )
                 val targetTranslation = canvasCenter - lastMarkScreenPos
@@ -448,7 +452,7 @@ fun MarkLabelsWindow(
                 )
 
                 waypoints.forEachIndexed { index, waypoint ->
-                    val screenPos = (maoCenterPosOffsetMeters + waypoint) * pixelsPerMeter
+                    val screenPos = (mapLeftTopPosOffsetMeters + waypoint) * pixelsPerMeter
                     drawWaypointMarker(
                         jDMode = jDMode,
                         position = screenPos,
@@ -506,7 +510,7 @@ fun MarkLabelsWindow(
                 x * sin(rotationAngle) + y * cos(rotationAngle) + lastMarkScreenPos.y
             )
             // Convert to metric coordinates
-            return (rotatedPos) / pixelsPerMeter - maoCenterPosOffsetMeters
+            return (rotatedPos) / pixelsPerMeter - mapLeftTopPosOffsetMeters
         }
 
         longPressPosition?.let { screenPos ->

@@ -411,9 +411,9 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
             while (isServiceRunning) {
                 val success = wifiManager.startScan()
                 Log.d("StartLocating", "Triggered")
-                if (success) {
-                    _serviceState.update { it.copy(isLoadingStarted = true) }
-                }
+//                if (success) {
+//                    _serviceState.update { it.copy(isLoadingStarted = true) }
+//                }
                 delay((period * 1000).toLong())
             }
         }
@@ -436,7 +436,8 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
         _serviceState.update {
             it.copy(
                 isLoadingStarted = false,
-                isLocatingStarted = false
+                isLocatingStarted = false,
+                targetOffset = Offset(0f, 0f)
             )
         }
         publishData("ack", data = AckData(deviceId = deviceId, ackInfo = "inference_off"))
@@ -717,6 +718,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                 targetOffset = Offset(x, y)
             )
         }
+        _serviceState.update { it.copy(isLoadingStarted = true) }
         if (_serviceState.value.imuOffset == null) {
             _serviceState.update {
                 it.copy(
