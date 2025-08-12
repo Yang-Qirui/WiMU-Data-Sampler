@@ -134,7 +134,7 @@ fun InferenceHorizontalPage(
         0.0F,
         0.0F
     )
-    val screenCenterPosOffsetMeters = Offset(
+    val mapCenterPosOffsetMeters = Offset(
         mapWidthPixels * metersPerPixel / 2f,
         mapHeightPixels * metersPerPixel / 2f
     )
@@ -158,26 +158,51 @@ fun InferenceHorizontalPage(
     val translationAnimation = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
     val userPosAnimation = remember { Animatable(userScreenPos, Offset.VectorConverter) }
 
-    LaunchedEffect(canvasCenter) {
-        val targetTranslation = canvasCenter - userScreenPos
-        translationAnimation.animateTo(
-            targetValue = targetTranslation,
-            animationSpec = tween(1000, easing = FastOutSlowInEasing)
-        )
+    LaunchedEffect(isLoadingStarted, canvasCenter) {
+        if (isLoadingStarted) {
+            val targetTranslation = canvasCenter - userScreenPos
+            translationAnimation.animateTo(
+                targetValue = targetTranslation,
+                animationSpec = tween(1000, easing = FastOutSlowInEasing)
+            )
+        } else {
+            val targetTranslation =
+                canvasCenter - ((mapCenterPosOffsetMeters + targetOffset) * pixelsPerMeter)
+            translationAnimation.animateTo(
+                targetValue = targetTranslation,
+                animationSpec = tween(1000, easing = FastOutSlowInEasing)
+            )
+        }
     }
 
-    LaunchedEffect(targetOffset) {
-        targetOffset.let { newPos ->
-            userPosAnimation.animateTo(
-                targetValue = (userPosOffsetMeters + newPos) * pixelsPerMeter,
-                animationSpec = tween(500, easing = FastOutSlowInEasing)
-            )
-            if (uiMode != NavUiMode.USER_POS_FREE_CENTER_DIR_FREE.value) {
-                val targetTranslation = canvasCenter - userScreenPos
-                translationAnimation.animateTo(
-                    targetValue = targetTranslation,
+    LaunchedEffect(isLoadingStarted, targetOffset) {
+        if (isLoadingStarted) {
+            targetOffset.let { newPos ->
+                userPosAnimation.animateTo(
+                    targetValue = (userPosOffsetMeters + newPos) * pixelsPerMeter,
                     animationSpec = tween(500, easing = FastOutSlowInEasing)
                 )
+                if (uiMode != NavUiMode.USER_POS_FREE_CENTER_DIR_FREE.value) {
+                    val targetTranslation = canvasCenter - userScreenPos
+                    translationAnimation.animateTo(
+                        targetValue = targetTranslation,
+                        animationSpec = tween(500, easing = FastOutSlowInEasing)
+                    )
+                }
+            }
+        } else {
+            targetOffset.let { newPos ->
+                userPosAnimation.animateTo(
+                    targetValue = (mapCenterPosOffsetMeters + newPos) * pixelsPerMeter,
+                    animationSpec = tween(500, easing = FastOutSlowInEasing)
+                )
+                if (uiMode != NavUiMode.USER_POS_FREE_CENTER_DIR_FREE.value) {
+                    val targetTranslation = canvasCenter - userScreenPos
+                    translationAnimation.animateTo(
+                        targetValue = targetTranslation,
+                        animationSpec = tween(500, easing = FastOutSlowInEasing)
+                    )
+                }
             }
         }
     }
@@ -407,7 +432,8 @@ fun InferenceHorizontalPage(
                         start = 20.dp,
                         top = 20.dp,
                         bottom = 20.dp
-                    ).then(
+                    )
+                    .then(
                         if (jDMode) {
                             // 如果 jDMode 为 true, 应用自定义尺寸
                             Modifier.size(width = 130.dp, height = 50.dp)
@@ -437,7 +463,8 @@ fun InferenceHorizontalPage(
                     .padding(
                         top = 20.dp,
                         bottom = 20.dp
-                    ).then(
+                    )
+                    .then(
                         if (jDMode) {
                             // 如果 jDMode 为 true, 应用自定义尺寸
                             Modifier.size(width = 70.dp, height = 50.dp)
@@ -466,7 +493,8 @@ fun InferenceHorizontalPage(
                         end = 20.dp,
                         top = 20.dp,
                         bottom = 20.dp,
-                    ).then(
+                    )
+                    .then(
                         if (jDMode) {
                             // 如果 jDMode 为 true, 应用自定义尺寸
                             Modifier.size(width = 50.dp, height = 50.dp)
@@ -529,7 +557,8 @@ fun InferenceHorizontalPage(
                         bottom = 20.dp,
                     )
                     .align(Alignment.BottomEnd)
-                    .padding(bottom = 80.dp).then(
+                    .padding(bottom = 80.dp)
+                    .then(
                         if (jDMode) {
                             // 如果 jDMode 为 true, 应用自定义尺寸
                             Modifier.size(width = 50.dp, height = 50.dp)
