@@ -62,24 +62,24 @@ import java.util.concurrent.CopyOnWriteArrayList
 data class ServiceState(
     //UI State
     var isCollectTraining: Boolean = false,
-    var isSampling:Boolean = false,
-    var isLocatingStarted:Boolean = false,
-    var isLoadingStarted:Boolean = false,
-    var isImuEnabled:Boolean=true,
-    var isMyStepDetectorEnabled:Boolean=false, //TODO: use own step detector
+    var isSampling: Boolean = false,
+    var isLocatingStarted: Boolean = false,
+    var isLoadingStarted: Boolean = false,
+    var isImuEnabled: Boolean = true,
+    var isMyStepDetectorEnabled: Boolean = false, //TODO: use own step detector
     //Sampling Page Data
     val yaw: Float = 0.0F,
     val pitch: Float = 0.0F,
     val roll: Float = 0.0F,
-    var numOfLabelSampling:Int? = null, // Start from 0
-    var wifiScanningInfo:String?=null,
+    var numOfLabelSampling: Int? = null, // Start from 0
+    var wifiScanningInfo: String? = null,
     var wifiSamplingCycles: Float = 3.0F,
     var sensorSamplingCycles: Float = 0.05F,
     var saveDirectory: String = "",
-    var targetOffset:Offset=Offset.Zero, // User's physical location
-    val userHeading:Float?=null, // User orientation Angle (0-360)
+    var targetOffset: Offset = Offset.Zero, // User's physical location
+    val userHeading: Float? = null, // User orientation Angle (0-360)
     val waypoints: SnapshotStateList<Offset> = mutableStateListOf(),
-    var imuOffset:Offset?=null,
+    var imuOffset: Offset? = null,
     //此处可添加更多需要暴露给软件UI的值
     //...
 )
@@ -168,9 +168,9 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                 sysNoise = preferences[UserPreferencesKeys.SYS_NOISE] ?: sysNoise
                 obsNoise = preferences[UserPreferencesKeys.OBS_NOISE] ?: obsNoise
 
-                url = preferences[UserPreferencesKeys.URL] ?:url
-                mqttServerUrl = preferences[UserPreferencesKeys.MQTT_SERVER_URL] ?:mqttServerUrl
-                apiBaseUrl = preferences[UserPreferencesKeys.API_BASE_URL] ?:apiBaseUrl
+                url = preferences[UserPreferencesKeys.URL] ?: url
+                mqttServerUrl = preferences[UserPreferencesKeys.MQTT_SERVER_URL] ?: mqttServerUrl
+                apiBaseUrl = preferences[UserPreferencesKeys.API_BASE_URL] ?: apiBaseUrl
                 azimuthOffset = preferences[UserPreferencesKeys.AZIMUTH_OFFSET] ?: azimuthOffset
             }
         }
@@ -470,7 +470,6 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                             obsNoise = obsNoise,
                         )
                     )
-
                 } else {
                     publishData(
                         topicSuffix = "inference",
