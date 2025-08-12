@@ -6,6 +6,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -87,6 +92,10 @@ data class ServiceState(
 class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListener {
     private lateinit var motionSensorManager: SensorUtils
     lateinit var wifiManager: WifiManager
+    // 蓝牙相关
+    private lateinit var bluetoothManager: BluetoothManager
+    private lateinit var bluetoothAdapter: BluetoothAdapter
+    private lateinit var bluetoothLeScanner: android.bluetooth.le.BluetoothLeScanner
     private lateinit var wifiScanReceiver: BroadcastReceiver
     private lateinit var timer: TimerUtils
     private lateinit var deviceId: String
@@ -113,6 +122,8 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
     private var lastGeomagnetic = FloatArray(3)
     private var lastMag by mutableFloatStateOf(0f)
     private var wifiScanningResults = mutableListOf<String>()
+    // 蓝牙扫描结果列表
+    private var bluetoothScanningResults = mutableListOf<String>()
     private var imuOffsetHistory = CoroutineLockIndexedList<Offset, Int>()
     private var stepCountHistory = 0
     private var lastOffset = Offset.Zero
@@ -158,6 +169,44 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
 
     override fun onBind(intent: Intent?): IBinder = binder
 
+    // 蓝牙扫描回调
+    @SuppressLint("MissingPermission") // 确保已在Manifest声明并在运行时请求
+    private val leScanCallback = object : ScanCallback() {
+        override fun onScanResult(callbackType: Int, result: ScanResult?) {
+            super.onScanResult(callbackType, result)
+            result?.let {
+                val timestamp = System.currentTimeMillis() - SystemClock.elapsedRealtime() + (it.timestampNanos / 1_000_000)
+                // 格式化蓝牙扫描结果
+                val formattedResult = "$timestamp,${it.device.name ?: "N/A"},${it.device.address},${it.rssi}\n"
+                bluetoothScanningResults.add(formattedResult)
+            }
+        }
+
+        override fun onBatchScanResults(results: MutableList<ScanResult>?) {
+            super.onBatchScanResults(results)
+            results?.forEach { result ->
+                val timestamp = System.currentTimeMillis() - SystemClock.elapsedRealtime() + (result.timestampNanos / 1_000_000)
+                val formattedResult = "$timestamp,${result.device.name ?: "N/A"},${result.device.address},${result.rssi}\n"
+                bluetoothScanningResults.add(formattedResult)
+            }
+        }
+
+        override fun onScanFailed(errorCode: Int) {
+            super.onScanFailed(errorCode)
+            Log.e("BluetoothScan", "Scan Failed with error code: $errorCode")
+
+            // Best Practice: Attempt to restart scan on certain failures
+            if (errorCode == SCAN_FAILED_APPLICATION_REGISTRATION_FAILED) {
+                // This can sometimes be fixed by stopping and starting again after a short delay
+                stopBluetoothScan()
+                serviceScope.launch {
+                    delay(200) // a short delay
+                    startBluetoothScan()
+                }
+            }
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.N_MR1)
     override fun onCreate() {
         super.onCreate()
@@ -192,7 +241,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                         Log.d("RECEIVED_RES", scanResults.toString())
                         if (maxScanTime - minScanTime < 500_000_000) {
                             wifiScanningResults = scanResults.map { scanResult ->
-                                "${(minScanTime / 1000 + bootTime)} ${scanResult.SSID} ${scanResult.BSSID} ${scanResult.frequency} ${scanResult.level}\n"
+                                "${(minScanTime / 1000 + bootTime)},${scanResult.SSID},${scanResult.BSSID},${scanResult.frequency},${scanResult.level}\n"
                             }.toMutableList()
                             if (_serviceState.value.isLocatingStarted) {
                                 locatingServiceScope.launch { onLatestWifiResultChanged(wifiScanningResults.toList()) }
@@ -206,11 +255,51 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
             }
         }
         val intentFilter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
+        // --- 新增: 蓝牙初始化 ---
+        bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+        bluetoothAdapter = bluetoothManager.adapter
+        bluetoothLeScanner = bluetoothAdapter.bluetoothLeScanner
+
         registerReceiver(wifiScanReceiver, intentFilter)
 
-        timer = TimerUtils(deviceId, samplingServiceScope, {wifiScanningResults}, {wifiScanningResults.clear()}, { wifiManager.startScan() }, this@FrontService)
+
+        timer = TimerUtils(
+            deviceId = deviceId,
+            coroutineScope = samplingServiceScope,
+            // Wi-Fi callbacks
+            getWiFiScanningResultCallback = { wifiScanningResults.toList().also { wifiScanningResults.clear() } },
+            clearWiFiScanningResultCallback = { wifiScanningResults.clear() },
+            wifiManagerScanning = { wifiManager.startScan() },
+            // 新增: Bluetooth callbacks
+            getBluetoothScanningResultCallback = { bluetoothScanningResults.toList().also { bluetoothScanningResults.clear() } },
+            clearBluetoothScanningResultCallback = { bluetoothScanningResults.clear() },
+            context = this@FrontService
+        )
         motionSensorManager = SensorUtils(this@FrontService)
 //        motionSensorManager.startMonitoring(this@FrontService)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startBluetoothScan() {
+        // 每次重新开始扫描前，不清除上一次的结果
+        // bluetoothScanningResults.clear()
+        // 定义扫描设置
+        val settings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY) // 高频率采集使用低延迟模式
+            .build()
+        // 开始扫描
+        Log.d("BluetoothLifecycle", "Starting continuous Bluetooth scan.")
+        bluetoothLeScanner.startScan(null, settings, leScanCallback)
+        // 为了和Wi-Fi的周期对齐，我们让它扫描一小段时间然后停止，等待下一个周期的触发
+        // TimerUtils中的delay会控制整体频率，我们只需要确保每次触发时都能扫到新的设备
+        // 一个常见的模式是短时扫描，或者持续扫描并在TimerUtils中获取快照
+        // 这里我们采用触发-扫描-获取-清除的模式，所以每次都重新startScan
+    }
+
+    // 新增一个方法来停止蓝牙扫描
+    @SuppressLint("MissingPermission")
+    private fun stopBluetoothScan() {
+        bluetoothLeScanner.stopScan(leScanCallback)
     }
 
     override fun onDestroy() {
@@ -220,6 +309,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
         stopCollectingData()
         motionSensorManager.stopMonitoring()
         unregisterReceiver(wifiScanReceiver)
+        stopBluetoothScan()
         serviceJob.cancel()
         samplingServiceJob.cancel()
         locatingServiceJob.cancel()
@@ -330,7 +420,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
             )
         }
         samplingServiceScope.launch {
-            timer.runWifiTaskAtFrequency(
+            timer.runScanningTaskAtFrequency(
                 frequencyY = _serviceState.value.wifiSamplingCycles.toDouble(),
                 timestamp = currentTimeInText,
                 dirName = _serviceState.value.saveDirectory,
@@ -339,6 +429,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
             )
         }
         motionSensorManager.startMonitoring(this@FrontService)
+        startBluetoothScan()
     }
 
     fun startCollectingUnLabelData(startTimestamp: Long) {
@@ -366,7 +457,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
             )
         }
         samplingServiceScope.launch {
-            timer.runWifiTaskAtFrequency(
+            timer.runScanningTaskAtFrequency(
                 frequencyY = _serviceState.value.wifiSamplingCycles.toDouble(),
                 timestamp = currentTimeInText,
                 dirName = _serviceState.value.saveDirectory,
@@ -374,6 +465,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
             )
         }
         motionSensorManager.startMonitoring(this@FrontService)
+        startBluetoothScan()
         publishData("ack", data = AckData(deviceId = deviceId, ackInfo = "sample_on"))
     }
 
@@ -381,6 +473,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
         Log.e("STOP SAMPLING", "HERE")
         _serviceState.update { it.copy(isSampling = false) }
         timer.stopTask(apiBaseUrl = apiBaseUrl)
+        stopBluetoothScan()
         samplingServiceJob.cancelChildren()
         if (!_serviceState.value.isLocatingStarted && !_serviceState.value.isLoadingStarted) {
             motionSensorManager.stopMonitoring()

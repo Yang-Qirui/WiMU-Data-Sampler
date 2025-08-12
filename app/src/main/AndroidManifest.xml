@@ -13,7 +13,19 @@
     <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-    
+
+    <!-- 新增：蓝牙权限 -->
+    <!-- 用于传统蓝牙和请求扫描 -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+
+    <!-- 对于 Android 12 (API 31) 及以上版本是必需的 -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- 声明你的应用使用了蓝牙功能 -->
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="true"/>
+
     <!-- Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- 前台服务权限 -->
@@ -50,7 +62,8 @@
             android:name=".FrontService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="location" />
+            android:foregroundServiceType="location"
+            android:attributionTags="dataCollection" />
 
         <service android:name="org.eclipse.paho.android.service.MqttService" />
         

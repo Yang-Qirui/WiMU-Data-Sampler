@@ -34,15 +34,19 @@ import kotlinx.coroutines.Dispatchers
 class TimerUtils(
     private val deviceId: String,
     private val coroutineScope: CoroutineScope,
+    // Wi-Fi Callbacks
     private val getWiFiScanningResultCallback: () -> List<String>,
     private val clearWiFiScanningResultCallback: () -> Unit,
     private val wifiManagerScanning: () -> Boolean,
+    // Bluetooth Callbacks
+    private val getBluetoothScanningResultCallback: () -> List<String>,
+    private val clearBluetoothScanningResultCallback: () -> Unit,
     context: Context,
 ){
     private var isSensorTaskRunning = AtomicBoolean(false)
-    private var isWifiTaskRunning = AtomicBoolean(false)
+    private var isScanningTaskRunning = AtomicBoolean(false)
     private var sensorJob: Job? = null
-    private var wifiJob: Job? = null
+    private var scanningJob: Job? = null
     private var uploadJob: Job? = null
     private val context = context
     var wifiScanningInfo by mutableStateOf("null")
@@ -118,6 +122,18 @@ class TimerUtils(
         val eulerFile = File(dir, "euler.csv")
         val singleStepFile = File(dir, "step.csv")
 
+        try {
+            if (!eulerFile.exists()) {
+                eulerFile.writeText("timestamp,yaw,roll,pitch\n")
+            }
+            if (!singleStepFile.exists()) {
+                singleStepFile.writeText("timestamp\n")
+            }
+        } catch (e: IOException) {
+            e.printStackTrace()
+            // Handle error, maybe log it or stop the task
+        }
+
         isSensorTaskRunning.set(true)
         sensorJob = coroutineScope.launch {
             while (isSensorTaskRunning.get() && isActive) {
@@ -127,8 +143,8 @@ class TimerUtils(
         }
     }
 
-    fun runWifiTaskAtFrequency(
-        frequencyY: Double, // Wi-Fi 采集频率 (秒)
+    fun runScanningTaskAtFrequency(
+        frequencyY: Double, // Wi-Fi & 蓝牙 采集频率 (秒)
         timestamp: String,
         dirName: String,
         collectWaypoint: Boolean,
@@ -149,29 +165,72 @@ class TimerUtils(
         }
         dirPath = dir
         val wifiFile = File(dir, "wifi.csv")
-        isWifiTaskRunning.set(true)
+        val bluetoothFile = File(dir, "bluetooth.csv")
+        // label.csv 文件
+        val labelFile = if (collectWaypoint) File(dir, "label.csv") else null
+
+        // --- 写入表头 ---
+        try {
+            // 1. 写入 Wi-Fi 表头
+            if (!wifiFile.exists()) {
+                wifiFile.writeText("timestamp,ssid,bssid,frequency,level\n")
+            }
+            // 2. 写入蓝牙表头
+            if (!bluetoothFile.exists()) {
+                bluetoothFile.writeText("timestamp,device_name,mac_address,rssi\n")
+            }
+            // 3. 新增: 写入 label.csv (如果需要)
+            labelFile?.let {
+                if (!it.exists()) {
+                    it.writeText("waypoint_x,waypoint_y\n") // 写入表头
+                    // 同时写入坐标数据，因为它只在采集开始时有一次
+                    it.appendText("${waypointPosition?.x},${waypointPosition?.y}\n")
+                }
+            }
+        } catch (e: IOException) {
+            e.printStackTrace()
+            // Handle error
+        }
+
+        isScanningTaskRunning.set(true)
+        // 清空两种扫描结果的回调
         clearWiFiScanningResultCallback()
-        wifiJob = coroutineScope.launch {
-            while (isWifiTaskRunning.get() && isActive) {
+        clearBluetoothScanningResultCallback()
+
+        scanningJob = coroutineScope.launch {
+            while (isScanningTaskRunning.get() && isActive) {
                 val invokeSuccess = wifiManagerScanning()
-                Log.d("INVOKE_WRITE", "[${System.currentTimeMillis()}] $invokeSuccess")
+                Log.d("INVOKE_SCAN", "[${System.currentTimeMillis()}] Wi-Fi: $invokeSuccess, BT: triggered")
+
                 try {
-                    if (!isWifiTaskRunning.get()) return@launch
+                    if (!isScanningTaskRunning.get()) return@launch
                     val wifiResults = getWiFiScanningResultCallback().toMutableList()
                     wifiScanningInfo = "${System.currentTimeMillis()} $invokeSuccess"
                     try {
                         val wifiWriter = FileWriter(wifiFile, true)
-                        if (collectWaypoint) {
-                            wifiWriter.append("${waypointPosition?.x},${waypointPosition?.y}\n")
-                        }
-                        for (result in wifiResults) {
-                            wifiWriter.append(result)
+                        wifiResults.forEach { result ->
+                            wifiWriter.append("$result\n")
                         }
                         wifiWriter.flush()
                         wifiWriter.close()
                     } catch (e: IOException) {
                         e.printStackTrace()
                     }
+
+                    // 获取蓝牙结果并写入
+                    val bluetoothResults = getBluetoothScanningResultCallback().toMutableList()
+                    try {
+                        val bluetoothWriter = FileWriter(bluetoothFile, true)
+                        //蓝牙数据前不加航点信息，因为它是连续扫描的，不像Wi-Fi是一次性的
+                        for (result in bluetoothResults) {
+                            bluetoothWriter.append(result)
+                        }
+                        bluetoothWriter.flush()
+                        bluetoothWriter.close()
+                    } catch (e: IOException) {
+                        e.printStackTrace()
+                    }
+
                     delay((frequencyY * 1000).toLong())
                 }catch (e: CancellationException){
                     break
@@ -241,9 +300,9 @@ class TimerUtils(
     // 提供停止任务的方法
     fun stopTask(apiBaseUrl:String) {
         sensorJob?.cancel(cause = CancellationException("Sensor task finished"))
-        wifiJob?.cancel(cause = CancellationException("wifi task finished"))
+        scanningJob?.cancel(cause = CancellationException("Scanning task finished"))
         isSensorTaskRunning.set(false)
-        isWifiTaskRunning.set(false)
+        isScanningTaskRunning.set(false)
         uploadJob = uploadServiceScope.launch {
             uploadSampledData(
                 uploadUrl = "$apiBaseUrl/data/upload"
