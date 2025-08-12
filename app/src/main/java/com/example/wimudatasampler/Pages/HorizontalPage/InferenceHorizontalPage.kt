@@ -131,6 +131,10 @@ fun InferenceHorizontalPage(
     val metersPerPixel = mapWidthMeters / mapWidthPixels
 
     val userPosOffsetMeters = Offset(
+        0.0F,
+        0.0F
+    )
+    val screenCenterPosOffsetMeters = Offset(
         mapWidthPixels * metersPerPixel / 2f,
         mapHeightPixels * metersPerPixel / 2f
     )

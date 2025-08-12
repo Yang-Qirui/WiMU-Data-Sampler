@@ -119,7 +119,7 @@ object MqttClient {
                         "inference_result" -> {
                             val x = result.data["x"]?.jsonPrimitive?.content!!
                             val y = result.data["y"]?.jsonPrimitive?.content!!
-                            commandListener?.onGetInferenceResult(x.toFloat() - 169, y.toFloat() - 84.5f) //TODO：需要修改
+                            commandListener?.onGetInferenceResult(x.toFloat(), y.toFloat()) //TODO：需要修改
                         }
                     }
                 } catch (e: Exception) {

@@ -352,8 +352,8 @@ fun MarkLabelsWindow(
     val metersPerPixel = mapWidthMeters / mapWidthPixels
 
     val maoCenterPosOffsetMeters = Offset(
-        mapWidthPixels * metersPerPixel / 2f,
-        mapHeightPixels * metersPerPixel / 2f
+        0.0F,
+        0.0F,
     )
     // Transition state
     var scale by remember { mutableFloatStateOf(2f) }
