@@ -83,7 +83,7 @@ class TimerUtils(
             val yaw = Math.toDegrees(orientations[0].toDouble()).toFloat()
             val roll = Math.toDegrees(orientations[1].toDouble()).toFloat()
             val pitch = Math.toDegrees(orientations[2].toDouble()).toFloat()
-            eulerWriter.append("$currentTime $yaw $roll $pitch\n")
+            eulerWriter.append("$currentTime,$yaw,$roll,$pitch\n")
             eulerWriter.flush()
             eulerWriter.close()
         } catch (e: IOException) {
@@ -123,8 +123,8 @@ class TimerUtils(
             dir.mkdirs()
         }
         dirPath = dir
-        val eulerFile = File(dir, "euler.txt")
-        val singleStepFile = File(dir, "step.txt")
+        val eulerFile = File(dir, "euler.csv")
+        val singleStepFile = File(dir, "step.csv")
 
         isSensorTaskRunning.set(true)
         sensorJob = coroutineScope.launch {
@@ -156,7 +156,7 @@ class TimerUtils(
             dir.mkdirs()
         }
         dirPath = dir
-        val wifiFile = File(dir, "wifi.txt")
+        val wifiFile = File(dir, "wifi.csv")
         isWifiTaskRunning.set(true)
         clearWiFiScanningResultCallback()
         wifiJob = coroutineScope.launch {
@@ -170,7 +170,7 @@ class TimerUtils(
                     try {
                         val wifiWriter = FileWriter(wifiFile, true)
                         if (collectWaypoint) {
-                            wifiWriter.append("${waypointPosition?.x}, ${waypointPosition?.y}\n")
+                            wifiWriter.append("${waypointPosition?.x},${waypointPosition?.y}\n")
                         }
                         for (result in wifiResults) {
                             wifiWriter.append(result)
@@ -219,7 +219,7 @@ class TimerUtils(
 
                         // 2. 添加所有文件
                         filesToUpload.forEach { file ->
-                            val key = file.name.removeSuffix(".txt")
+                            val key = file.name.removeSuffix(".csv")
                             append(key, file.readBytes(), Headers.build {
                                 set(HttpHeaders.ContentType, "application/octet-stream")
                                 set(HttpHeaders.ContentDisposition, "filename=\"${file.name}\"")
