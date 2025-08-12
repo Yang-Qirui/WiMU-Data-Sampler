@@ -1,6 +1,9 @@
 package com.example.wimudatasampler
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
 import android.content.BroadcastReceiver
 import dagger.hilt.android.AndroidEntryPoint
 import android.content.ComponentName
@@ -73,6 +76,7 @@ class MainActivity : ComponentActivity() {
 
     // --- NEW: State to control the location disabled dialog ---
     private var showLocationDisabledDialog by mutableStateOf(false)
+    private var showBluetoothDisabledDialog by mutableStateOf(false)
 
     // --- NEW: BroadcastReceiver to listen for location provider changes ---
     private val locationSwitchStateReceiver = object : BroadcastReceiver() {
@@ -80,6 +84,15 @@ class MainActivity : ComponentActivity() {
             if (LocationManager.PROVIDERS_CHANGED_ACTION == intent.action) {
                 // Location state has changed, re-check and update the dialog state
                 checkLocationAndShowDialog()
+            }
+        }
+    }
+
+    private val bluetoothSwitchStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (BluetoothAdapter.ACTION_STATE_CHANGED == intent.action) {
+                // Bluetooth state has changed, re-check and update the dialog state
+                checkBluetoothAndShowDialog()
             }
         }
     }
@@ -117,6 +130,11 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requiredPermissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
+        // --- Conditional Bluetooth permissions for Android 12+ ---
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            requiredPermissions.add(Manifest.permission.BLUETOOTH_SCAN)
+            requiredPermissions.add(Manifest.permission.BLUETOOTH_CONNECT)
+        }
         // 检查哪些权限是尚未被授予的
         val permissionsToAsk = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -143,7 +161,12 @@ class MainActivity : ComponentActivity() {
 
         // NEW: Register the receiver and perform the initial check
         registerReceiver(locationSwitchStateReceiver, IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION))
+        // --- Register the Bluetooth receiver ---
+        registerReceiver(bluetoothSwitchStateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
+        // Perform initial checks
         checkLocationAndShowDialog()
+        // --- Perform initial Bluetooth check ---
+        checkBluetoothAndShowDialog()
     }
 
     // --- MODIFIED: onStop lifecycle method ---
@@ -156,6 +179,7 @@ class MainActivity : ComponentActivity() {
         }
         // NEW: Unregister the receiver to prevent memory leaks
         unregisterReceiver(locationSwitchStateReceiver)
+        unregisterReceiver(bluetoothSwitchStateReceiver)
     }
 
     // --- NEW: Helper function to check if location services are enabled ---
@@ -167,11 +191,7 @@ class MainActivity : ComponentActivity() {
 
     // --- NEW: Helper function to show dialog if location is disabled ---
     private fun checkLocationAndShowDialog() {
-        if (!isLocationEnabled()) {
-            showLocationDisabledDialog = true
-        } else {
-            showLocationDisabledDialog = false
-        }
+        showLocationDisabledDialog = !isLocationEnabled()
     }
 
     // --- NEW: Helper function to open system location settings ---
@@ -180,6 +200,19 @@ class MainActivity : ComponentActivity() {
         startActivity(intent)
     }
 
+    // --- Helper functions for Bluetooth ---
+    private fun isBluetoothEnabled(): Boolean {
+        val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+        val bluetoothAdapter = bluetoothManager.adapter ?: return false // Device doesn't support Bluetooth
+        return bluetoothAdapter.isEnabled
+    }
+    private fun checkBluetoothAndShowDialog() {
+        showBluetoothDisabledDialog = !isBluetoothEnabled()
+    }
+    private fun openBluetoothSettings() {
+        val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+        startActivity(intent)
+    }
 
     private fun bindToFrontService():Boolean {
         Intent(this, FrontService::class.java).also { intent ->
@@ -245,6 +278,19 @@ class MainActivity : ComponentActivity() {
                         text = { Text(text = "This application requires the location service to be enabled in order to function properly. Please enable it in the system settings.") },
                         confirmButton = {
                             Button(onClick = { openLocationSettings() }) {
+                                Text("Go to Settings")
+                            }
+                        }
+                    )
+                }
+
+                if (showBluetoothDisabledDialog) {
+                    AlertDialog(
+                        onDismissRequest = {},
+                        title = { Text(text = "Bluetooth is off") },
+                        text = { Text(text = "This application requires Bluetooth to be enabled for data collection. Please enable it in system settings.") },
+                        confirmButton = {
+                            Button(onClick = { openBluetoothSettings() }) {
                                 Text("Go to Settings")
                             }
                         }
