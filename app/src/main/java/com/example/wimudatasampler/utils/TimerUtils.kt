@@ -11,7 +11,6 @@ import androidx.compose.ui.geometry.Offset
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.android.Android
 import io.ktor.client.request.forms.formData
-import io.ktor.client.request.forms.submitFormWithBinaryData
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
@@ -26,18 +25,11 @@ import java.io.FileWriter
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
-import io.ktor.client.request.forms.InputProvider
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.serialization.json.Json
-import java.util.UUID
 
 class TimerUtils(
     private val deviceId: String,
