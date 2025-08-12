@@ -86,8 +86,8 @@ object MqttClient {
             override fun connectComplete(reconnect: Boolean, serverURI: String?) {
                 Log.i(TAG, "Paho MQTT Connection Complete. Reconnect: $reconnect")
                 // 连接成功后，订阅主题
-                subscribeToTopic("devices/${credentials.mqttUsername}/commands")
-                subscribeToTopic("devices/inference")
+                subscribeToTopic("devices/${credentials.mqtt_username}/commands")
+//                subscribeToTopic("devices/inference")
                 subscribeToTopic("devices/ack")
             }
 
@@ -100,7 +100,9 @@ object MqttClient {
                 Log.i(TAG, "Message arrived from '$topic': $payload")
                 try {
                     val result = decodeFromString<MqttData>(payload)
-                    val command = result.data["command"]?.jsonPrimitive?.content!!
+//                    Log.d("MQTT res", result)
+                    val command = result.command
+                    Log.d("Command", command)
                     when (command) {
                         "end_sample" -> {
                             commandListener?.onStopSampling()
@@ -117,7 +119,7 @@ object MqttClient {
                         "inference_result" -> {
                             val x = result.data["x"]?.jsonPrimitive?.content!!
                             val y = result.data["y"]?.jsonPrimitive?.content!!
-                            commandListener?.onGetInferenceResult(x.toFloat(), y.toFloat())
+                            commandListener?.onGetInferenceResult(x.toFloat() - 169, y.toFloat() - 84.5f) //TODO：需要修改
                         }
                     }
                 } catch (e: Exception) {
@@ -130,8 +132,8 @@ object MqttClient {
 
         // 3. 设置连接选项
         val options = MqttConnectOptions().apply {
-            userName = credentials.mqttUsername
-            password = credentials.mqttPassword.toCharArray()
+            userName = credentials.mqtt_username
+            password = credentials.mqtt_password.toCharArray()
             isAutomaticReconnect = true // 开启 Paho 内置的自动重连
             isCleanSession = true
         }
@@ -178,11 +180,10 @@ object MqttClient {
             val deviceId = getDeviceId(appContext)
             val deviceName = getDeviceName(appContext)
             Log.d("deviceName", deviceName)
-            val requestBody = RegisterDeviceRequest(deviceId, deviceName)
-            val jsonStringBody = Json.encodeToString(requestBody)
-            val response = ktorHttpClient.post("$apiBaseUrl/register") {
-                contentType(ContentType.Application.Json)
-                setBody(jsonStringBody)
+            val response = ktorHttpClient.post("$apiBaseUrl/device/register") {
+                parameter("device_id", deviceId)
+                parameter("device_name", deviceName)
+                parameter("warehouse_id", "hkust") // TODO: Dynamically change warehouse
             }
             if (response.status == HttpStatusCode.OK) {
                 val responseString = response.bodyAsText()
@@ -199,8 +200,8 @@ object MqttClient {
 
     private fun saveCredentialsToPrefs(credentials: MqttCredentials) {
         prefs.edit(commit = true) {
-            putString(KEY_MQTT_USERNAME, credentials.mqttUsername)
-            putString(KEY_MQTT_PASSWORD, credentials.mqttPassword)
+            putString(KEY_MQTT_USERNAME, credentials.mqtt_username)
+            putString(KEY_MQTT_PASSWORD, credentials.mqtt_password)
         }
     }
 
@@ -260,9 +261,7 @@ object MqttClient {
     }
 
     @Serializable
-    data class RegisterDeviceRequest(val deviceId: String, val deviceName: String)
-    @Serializable
-    data class MqttCredentials(val mqttUsername: String, val mqttPassword: String)
+    data class MqttCredentials(val mqtt_username: String, val mqtt_password: String)
     @Serializable
     data class InferenceData(
         val deviceId: String,

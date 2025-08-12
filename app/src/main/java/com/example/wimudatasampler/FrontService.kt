@@ -123,7 +123,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
     private var filteredDirection = 0f
 
     // 持久化的变量
-    var stride by mutableFloatStateOf(0.4f)
+    var stride by mutableFloatStateOf(0.55f)
     var beta by mutableFloatStateOf(0.9f)
     var estimatedStrideLength by mutableFloatStateOf(0f)
     var estimatedStrides = mutableListOf<Float>()
@@ -208,7 +208,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
         val intentFilter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
         registerReceiver(wifiScanReceiver, intentFilter)
 
-        timer = TimerUtils(samplingServiceScope, {wifiScanningResults}, {wifiScanningResults.clear()}, { wifiManager.startScan() }, this@FrontService)
+        timer = TimerUtils(deviceId, samplingServiceScope, {wifiScanningResults}, {wifiScanningResults.clear()}, { wifiManager.startScan() }, this@FrontService)
         motionSensorManager = SensorUtils(this@FrontService)
 //        motionSensorManager.startMonitoring(this@FrontService)
     }

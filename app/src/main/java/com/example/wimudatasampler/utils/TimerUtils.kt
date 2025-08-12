@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
 import io.ktor.client.request.forms.InputProvider
 import io.ktor.client.request.forms.MultiPartFormDataContent
+import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -39,6 +40,7 @@ import kotlinx.serialization.json.Json
 import java.util.UUID
 
 class TimerUtils(
+    private val deviceId: String,
     private val coroutineScope: CoroutineScope,
     private val getWiFiScanningResultCallback: () -> List<String>,
     private val clearWiFiScanningResultCallback: () -> Unit,
@@ -190,89 +192,59 @@ class TimerUtils(
         savingMainDir = dir
     }
 
-    suspend fun uploadSampledData(uploadMetaUrl:String, uploadFileUrl: String): Boolean {
-//        Log.d("Uploading")
+    private suspend fun uploadSampledData(uploadUrl: String): Boolean {
         val directory = dirPath
         if (directory == null || !directory.exists() || !directory.isDirectory) {
-            Log.e("UploadV2", "Directory path is invalid or does not exist: $dirPath")
+            Log.e("Upload", "Directory path is invalid or does not exist: $dirPath")
             return false
         }
+
         val filesToUpload = directory.listFiles()?.filter { it.isFile }
         if (filesToUpload.isNullOrEmpty()) {
-            Log.w("UploadV2", "No files to upload in directory: ${directory.absolutePath}")
-            return true // 目录为空，也算作“成功”
+            Log.w("Upload", "No non-empty files to upload in directory: ${directory.absolutePath}")
+            return true // 目录为空或文件为空，视为“成功”，不进行上传。
         }
-        val batchId = UUID.randomUUID().toString()
-        val fileNames = filesToUpload.map { it.name }
-        val manifest = UploadBatchManifest(
-            batch_id = batchId,
-            total_files = fileNames.size,
-            device_id = getDeviceId(context.applicationContext),
-            path_name = directory.path,
-            data_type = if(isCollectLabel) "labeled" else "unlabeled"
-        )
+        Log.i("Upload", filesToUpload.toString())
+        Log.i("Upload", "Starting upload process for directory: ${directory.name}")
+
         try {
-            val metaUploadResponse = uploadClient.post(uploadMetaUrl) {
-                contentType(ContentType.Application.Json)
-                setBody(Json.encodeToString(manifest))
-            }
-            if (metaUploadResponse.status != HttpStatusCode.OK) {
-                Log.e("UploadV2", "Failed to initialize batch. Status: ${metaUploadResponse.status}. Body: ${metaUploadResponse.bodyAsText()}")
-                return false
-            }
-            Log.i("UploadV2", "Batch initialized successfully on the server.")
-
-            // 3. 第二步：并发上传所有文件到 /api/upload/chunk
-            val uploadJobs = filesToUpload.map { file ->
-                // 使用 async 启动并发任务，它会返回一个 Deferred<Boolean>
-                uploadServiceScope.async {
-                    uploadSingleFile(uploadFileUrl, batchId, file)
-                }
-            }
-
-            // 等待所有上传任务完成，并获取它们的布尔结果
-            val results = uploadJobs.awaitAll()
-
-            // 检查是否所有上传都成功了
-            val allUploadsSuccessful = results.all { it }
-            if (allUploadsSuccessful) {
-                Log.i("UploadV2", "All files for batch $batchId uploaded successfully!")
-            } else {
-                Log.e("UploadV2", "One or more files failed to upload for batch $batchId.")
-            }
-            return allUploadsSuccessful
-        } catch (e: Exception) {
-            Log.e("UploadV2", "An exception occurred during the upload process for batch $batchId", e)
-            return false
-        }
-    }
-
-    private suspend fun uploadSingleFile(baseUrl: String, batchId: String, file: File): Boolean {
-        Log.d("UploadV2", "[${batchId}] Uploading chunk: ${file.name}...")
-        try {
-            val response = uploadClient.post(baseUrl) {
+            val response = uploadClient.post(uploadUrl) {
+                parameter("device_id", deviceId)
+                parameter("warehouse_id", "hkust") // TODO: 如果需要，可以作为参数传入
                 setBody(MultiPartFormDataContent(
                     formData {
-                        append("batch_id", batchId)
-                        append("file", file.readBytes(), Headers.build {
-                            set(HttpHeaders.ContentType, ContentType.Application.OctetStream.toString())
-                            set(HttpHeaders.ContentDisposition, "filename=\"${file.name}\"")
-                        })
+                        // 1. 添加元数据 (meta-data)
+                        append("collection_time", System.currentTimeMillis() / 1000) // 只上传目录名，而不是完整路径
+                        append("is_labeled", if (isCollectLabel) true else false)
+
+                        // 2. 添加所有文件
+                        filesToUpload.forEach { file ->
+                            val key = file.name.removeSuffix(".txt")
+                            append(key, file.readBytes(), Headers.build {
+                                set(HttpHeaders.ContentType, "application/octet-stream")
+                                set(HttpHeaders.ContentDisposition, "filename=\"${file.name}\"")
+                            })
+                            Log.d("Upload", "Added file to upload request: ${file.name}")
+                        }
                     }
                 ))
             }
+
+            // 3. 处理服务器响应
             if (response.status == HttpStatusCode.OK) {
-                Log.d("UploadV2", "[${batchId}] Successfully uploaded chunk: ${file.name}")
+                Log.i("Upload", "Successfully uploaded all files and metadata for directory ${directory.name}!")
                 return true
             } else {
-                Log.e("UploadV2", "[${batchId}] Failed to upload chunk ${file.name}. Status: ${response.status}, Body: ${response.bodyAsText()}")
+                Log.e("Upload", "Failed to upload. Status: ${response.status}, Body: ${response.bodyAsText()}")
                 return false
             }
+
         } catch (e: Exception) {
-            Log.e("UploadV2", "[${batchId}] Exception while uploading chunk ${file.name}", e)
+            Log.e("Upload", "An exception occurred during the upload process for directory ${directory.name}", e)
             return false
         }
     }
+
 
     // 提供停止任务的方法
     fun stopTask(apiBaseUrl:String) {
@@ -282,8 +254,7 @@ class TimerUtils(
         isWifiTaskRunning.set(false)
         uploadJob = uploadServiceScope.launch {
             uploadSampledData(
-                uploadMetaUrl = "$apiBaseUrl/upload_meta",
-                uploadFileUrl = "$apiBaseUrl/upload"
+                uploadUrl = "$apiBaseUrl/data/upload"
             )
         }
     }
