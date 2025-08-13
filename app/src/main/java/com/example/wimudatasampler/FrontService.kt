@@ -123,7 +123,12 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
     private var lastMag by mutableFloatStateOf(0f)
     private var wifiScanningResults = mutableListOf<String>()
     // 蓝牙扫描结果列表
-    private var bluetoothScanningResults = mutableListOf<String>()
+    private var bluetoothScanningResults = mutableListOf<ScanResult>()
+
+    private var bufferedBluetoothResults = mutableListOf<ScanResult>()
+    // --- A variable to hold the latest Wi-Fi timestamp ---
+    private var latestWifiTimestamp: Long = 0L
+
     private var imuOffsetHistory = CoroutineLockIndexedList<Offset, Int>()
     private var stepCountHistory = 0
     private var lastOffset = Offset.Zero
@@ -177,8 +182,8 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
             result?.let {
                 val timestamp = System.currentTimeMillis() - SystemClock.elapsedRealtime() + (it.timestampNanos / 1_000_000)
                 // 格式化蓝牙扫描结果
-                val formattedResult = "$timestamp,${it.device.name ?: "N/A"},${it.device.address},${it.rssi}\n"
-                bluetoothScanningResults.add(formattedResult)
+                val formattedResult = "$latestWifiTimestamp,${it.device.name ?: "N/A"},${it.device.address},${it.rssi}\n"
+                bluetoothScanningResults.add(it)
             }
         }
 
@@ -186,8 +191,8 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
             super.onBatchScanResults(results)
             results?.forEach { result ->
                 val timestamp = System.currentTimeMillis() - SystemClock.elapsedRealtime() + (result.timestampNanos / 1_000_000)
-                val formattedResult = "$timestamp,${result.device.name ?: "N/A"},${result.device.address},${result.rssi}\n"
-                bluetoothScanningResults.add(formattedResult)
+                val formattedResult = "$latestWifiTimestamp,${result.device.name ?: "N/A"},${result.device.address},${result.rssi}\n"
+                bluetoothScanningResults.add(result)
             }
         }
 
@@ -208,6 +213,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
     }
 
     @RequiresApi(Build.VERSION_CODES.N_MR1)
+    @SuppressLint("MissingPermission")
     override fun onCreate() {
         super.onCreate()
         serviceScope.launch {
@@ -239,9 +245,12 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                         val maxScanTime = scanResults.maxOf { it.timestamp }
                         Log.d("Diff", "${maxScanTime - minScanTime}")
                         Log.d("RECEIVED_RES", scanResults.toString())
+                        // --- MODIFICATION END ---
                         if (maxScanTime - minScanTime < 500_000_000) {
+                            val wifiTimestamp = (minScanTime / 1000 + bootTime)
+                            this@FrontService.latestWifiTimestamp = wifiTimestamp
                             wifiScanningResults = scanResults.map { scanResult ->
-                                "${(minScanTime / 1000 + bootTime)},${scanResult.SSID},${scanResult.BSSID},${scanResult.frequency},${scanResult.level}\n"
+                                "${wifiTimestamp},${scanResult.SSID},${scanResult.BSSID},${scanResult.frequency},${scanResult.level}\n"
                             }.toMutableList()
                             if (_serviceState.value.isLocatingStarted) {
                                 locatingServiceScope.launch { onLatestWifiResultChanged(wifiScanningResults.toList()) }
@@ -271,7 +280,27 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
             clearWiFiScanningResultCallback = { wifiScanningResults.clear() },
             wifiManagerScanning = { wifiManager.startScan() },
             // 新增: Bluetooth callbacks
-            getBluetoothScanningResultCallback = { bluetoothScanningResults.toList().also { bluetoothScanningResults.clear() } },
+            getBluetoothScanningResultCallback = {
+                // 1. DATA TO WRITE NOW:
+                //    Use the timestamp from the Wi-Fi scan that just finished
+                //    to format the Bluetooth results from the PREVIOUS cycle, which are in the buffer.
+                val resultsToWrite = bufferedBluetoothResults.map { result ->
+                    "${this@FrontService.latestWifiTimestamp},${result.device.name ?: "N/A"},${result.device.address},${result.rssi}\n"
+                }
+
+                // 2. PREPARE FOR THE NEXT CYCLE:
+                //    Move the results collected in the cycle that JUST ENDED (which are in the main list)
+                //    into the buffer. They will wait there until the next Wi-Fi timestamp arrives.
+                bufferedBluetoothResults = bluetoothScanningResults.toMutableList()
+
+                // 3. CLEAR THE MAIN LIST:
+                //    The main collection list is now empty, ready to start collecting new
+                //    Bluetooth results for the upcoming cycle.
+                bluetoothScanningResults.clear()
+
+                // 4. RETURN THE DATA TO BE WRITTEN:
+                //    Send the formatted data from the previous cycle to TimerUtils.
+                resultsToWrite},
             clearBluetoothScanningResultCallback = { bluetoothScanningResults.clear() },
             context = this@FrontService
         )
