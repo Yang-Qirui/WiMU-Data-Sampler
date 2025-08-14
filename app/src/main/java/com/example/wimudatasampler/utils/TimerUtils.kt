@@ -2,8 +2,10 @@ package com.example.wimudatasampler.utils
 
 import android.content.Context
 import android.hardware.SensorManager
+import android.os.Build
 import android.os.Environment
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -30,6 +32,9 @@ import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import kotlinx.coroutines.Dispatchers
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 class TimerUtils(
     private val deviceId: String,
@@ -243,6 +248,7 @@ class TimerUtils(
         savingMainDir = dir
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private suspend fun uploadSampledData(uploadUrl: String): Boolean {
         val directory = dirPath
         if (directory == null || !directory.exists() || !directory.isDirectory) {
@@ -259,14 +265,27 @@ class TimerUtils(
         Log.i("Upload", "Starting upload process for directory: ${directory.name}")
 
         try {
+            val warehouseName = "hkust"
+            // 1. 获取一次当前时间的毫秒时间戳，并保存
+            val currentTimeMillis = System.currentTimeMillis()
+
+            // 2. 基于这个时间戳生成格式化的日期时间字符串
+            //    - 定义格式化模板
+            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")
+            //    - 将毫秒时间戳转换为带时区的ZonedDateTime，然后格式化
+            val formattedDateTime = Instant.ofEpochMilli(currentTimeMillis)
+                .atZone(ZoneId.systemDefault()) // 使用手机的默认时区
+                .format(formatter)
+
             val response = uploadClient.post(uploadUrl) {
                 parameter("device_id", deviceId)
-                parameter("warehouse_id", "hkust") // TODO: 如果需要，可以作为参数传入
+                parameter("warehouse_id", warehouseName) // TODO: 如果需要，可以作为参数传入
                 setBody(MultiPartFormDataContent(
                     formData {
                         // 1. 添加元数据 (meta-data)
-                        append("collection_time", System.currentTimeMillis() / 1000) // 只上传目录名，而不是完整路径
-                        append("is_labeled", if (isCollectLabel) true else false)
+                        append("data_name", value = directory.name)
+                        append("collection_time", value = currentTimeMillis / 1000) // 只上传目录名，而不是完整路径
+                        append("is_labeled", value = isCollectLabel)
 
                         // 2. 添加所有文件
                         filesToUpload.forEach { file ->
@@ -298,6 +317,7 @@ class TimerUtils(
 
 
     // 提供停止任务的方法
+    @RequiresApi(Build.VERSION_CODES.O)
     fun stopTask(apiBaseUrl:String) {
         sensorJob?.cancel(cause = CancellationException("Sensor task finished"))
         scanningJob?.cancel(cause = CancellationException("Scanning task finished"))
