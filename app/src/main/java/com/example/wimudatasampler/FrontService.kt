@@ -66,6 +66,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 data class ServiceState(
     //UI State
+    var isReRegistering: Boolean = false, // <--- 新增这一行
     var isCollectTraining: Boolean = false,
     var isSampling: Boolean = false,
     var isLocatingStarted: Boolean = false,
@@ -156,6 +157,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
     var mqttServerUrl = MQTT_SERVER_URI
     var apiBaseUrl = API_BASE_URL
     var azimuthOffset = 90f
+    var warehouseName = "hkust"
     // 持久化的变量
 
     companion object {
@@ -212,6 +214,41 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
         }
     }
 
+    // 新增：用于触发重新注册的公共方法
+    @RequiresApi(Build.VERSION_CODES.N_MR1)
+    fun reRegisterMqttClient() {
+        // 1. 检查是否已经在执行，防止重复点击
+        if (_serviceState.value.isReRegistering) {
+            Log.d("FrontService", "Re-registration is already in progress.")
+            return
+        }
+
+        // 2. 使用 serviceScope 启动一个协程来处理这个耗时操作
+        serviceScope.launch {
+            // 3. 更新状态，通知 UI 开始加载
+            _serviceState.update { it.copy(isReRegistering = true) }
+
+            Log.i("FrontService", "Starting MQTT re-registration process...")
+
+            try {
+                // 4. 调用 MqttClient 的核心方法
+                //    注意：mqttServerUrl 和 apiBaseUrl 已经是 Service 的成员变量，可以直接使用
+                MqttClient.reRegisterAndConnect(
+                    warehouseName = warehouseName,
+                    mqttServerUrl = this@FrontService.mqttServerUrl,
+                    apiBaseUrl = this@FrontService.apiBaseUrl
+                )
+                Log.i("FrontService", "MQTT re-registration process completed successfully.")
+            } catch (e: Exception) {
+                // 5. 捕获任何可能的异常
+                Log.e("FrontService", "MQTT re-registration failed", e)
+            } finally {
+                // 6. 任务结束（无论成功或失败），恢复 UI 状态
+                _serviceState.update { it.copy(isReRegistering = false) }
+            }
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.N_MR1)
     @SuppressLint("MissingPermission")
     override fun onCreate() {
@@ -227,9 +264,13 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                 mqttServerUrl = preferences[UserPreferencesKeys.MQTT_SERVER_URL] ?: mqttServerUrl
                 apiBaseUrl = preferences[UserPreferencesKeys.API_BASE_URL] ?: apiBaseUrl
                 azimuthOffset = preferences[UserPreferencesKeys.AZIMUTH_OFFSET] ?: azimuthOffset
+                warehouseName = preferences[UserPreferencesKeys.WAREHOUSE_NAME] ?: warehouseName
+                // 在加载完URL后，初始化 MqttClient
+//                MqttClient.initialize(this@FrontService, mqttServerUrl = mqttServerUrl, apiBaseUrl = apiBaseUrl)
+//                MqttClient.setCommandListener(this@FrontService)
             }
         }
-        MqttClient.initialize(this, mqttServerUrl = mqttServerUrl, apiBaseUrl = apiBaseUrl)
+        MqttClient.initialize(this, warehouseName = warehouseName, mqttServerUrl = mqttServerUrl, apiBaseUrl = apiBaseUrl)
         MqttClient.setCommandListener(this)
         deviceId = getDeviceId(applicationContext)
         wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
@@ -271,7 +312,6 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
 
         registerReceiver(wifiScanReceiver, intentFilter)
 
-
         timer = TimerUtils(
             deviceId = deviceId,
             coroutineScope = samplingServiceScope,
@@ -285,7 +325,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                 //    Use the timestamp from the Wi-Fi scan that just finished
                 //    to format the Bluetooth results from the PREVIOUS cycle, which are in the buffer.
                 val resultsToWrite = bufferedBluetoothResults.map { result ->
-                    "${this@FrontService.latestWifiTimestamp},${result.device.name ?: "N/A"},${result.device.address},${result.rssi}\n"
+                    "${this@FrontService.latestWifiTimestamp},${result.device.name ?: "N/A"},${result.device.address},2462,${result.rssi}\n"
                 }
 
                 // 2. PREPARE FOR THE NEXT CYCLE:
@@ -331,6 +371,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
         bluetoothLeScanner.stopScan(leScanCallback)
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onDestroy() {
         super.onDestroy()
         MqttClient.disconnect()
@@ -498,10 +539,11 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
         publishData("ack", data = AckData(deviceId = deviceId, ackInfo = "sample_on"))
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     fun stopCollectingData() {
         Log.e("STOP SAMPLING", "HERE")
         _serviceState.update { it.copy(isSampling = false) }
-        timer.stopTask(apiBaseUrl = apiBaseUrl)
+        timer.stopTask(warehouseName = warehouseName, apiBaseUrl = apiBaseUrl)
         stopBluetoothScan()
         samplingServiceJob.cancelChildren()
         if (!_serviceState.value.isLocatingStarted && !_serviceState.value.isLoadingStarted) {
@@ -818,6 +860,7 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
         startCollectingUnLabelData(timestamp) //TODO: "Maybe support labeled sampling?"
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onStopSampling() {
         stopCollectingData()
     }

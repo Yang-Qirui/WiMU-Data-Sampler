@@ -19,4 +19,6 @@ object UserPreferencesKeys {
     val API_BASE_URL = stringPreferencesKey("api_base_url")
 
     val AZIMUTH_OFFSET = floatPreferencesKey("azimuth_offset")
+
+    val WAREHOUSE_NAME = stringPreferencesKey("warehouse_name")
 }

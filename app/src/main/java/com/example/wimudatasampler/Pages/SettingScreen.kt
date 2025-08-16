@@ -7,15 +7,19 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBackIos
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -60,6 +64,8 @@ import kotlin.math.pow
 fun SettingScreen(
     modifier: Modifier = Modifier,
     context: Context,
+    isReRegistering: Boolean,
+    warehouseName:String,
     navController: NavController,
     stride: Float,
     beta: Float,
@@ -70,6 +76,8 @@ fun SettingScreen(
     mqttServerUrl:String,
     apiBaseUrl:String,
     azimuthOffset: Float,
+    reRegisterMqttClient:() -> Unit,
+    updateWarehouseName:(String) -> Unit,
     updateStride: (Float) ->Unit,
     updateBeta: (Float) ->Unit,
     updateSysNoise: (Float) -> Unit,
@@ -140,6 +148,7 @@ fun SettingScreen(
         }
     ) { innerPadding ->
 
+        var curWarehouseName by remember { mutableStateOf(warehouseName) }
         var curStride by remember { mutableStateOf(stride.toString()) }
         var curBeta by remember { mutableStateOf(beta.toString()) }
         var curSysNoise by remember { mutableStateOf(sysNoise.toString()) }
@@ -160,6 +169,58 @@ fun SettingScreen(
             val styleScriptFamily = FontFamily(
                 Font(R.font.style_script, FontWeight.Normal),
             )
+
+            // 重新注册按钮
+            Button(
+                // 当正在重新注册时，禁用按钮
+                // 我们现在从 serviceState 中读取 isReRegistering 的值
+                enabled = ! isReRegistering,
+                onClick = {
+                    // 点击时，直接调用 service 的新方法
+                    reRegisterMqttClient()
+                }
+            ) {
+                if (isReRegistering) {
+                    // 显示加载指示器
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Re-registering...")
+                } else {
+                    Text("Re-register the device")
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .padding(8.dp)
+            ) {
+                Text(
+                    text = "Warehouse Name",
+                    style = TextStyle(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    ),
+                    fontFamily = styleScriptFamily,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp)
+                )
+                OutlinedTextField(
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Done
+                    ),
+                    value = curWarehouseName,
+                    onValueChange = { value ->
+                        curWarehouseName = value
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("") }
+                )
+            }
 
             Column(
                 modifier = Modifier
@@ -455,6 +516,7 @@ fun SettingScreen(
 
                             saveUserPreferences(
                                 context = context,
+                                warehouseName = curWarehouseName,
                                 stride = curStride.toFloatOrNull() ?: stride,
                                 beta = curBeta.toFloatOrNull() ?: beta,
                                 sysNoise = curSysNoise.toFloatOrNull() ?: sysNoise,
@@ -482,7 +544,9 @@ fun SettingScreen(
                 modifier = Modifier
                     .padding(top = 12.dp)
                     .align(Alignment.CenterHorizontally),
-                enabled = (stride != curStride.toFloatOrNull() ||
+                enabled = (
+                        warehouseName != curWarehouseName ||
+                        stride != curStride.toFloatOrNull() ||
                         beta != curBeta.toFloatOrNull() ||
                         sysNoise != curSysNoise.toFloatOrNull() ||
                         obsNoise != curObsNoise.toFloatOrNull() ||
@@ -500,6 +564,7 @@ fun SettingScreen(
 
 suspend fun saveUserPreferences(
     context: Context,
+    warehouseName: String,
     stride: Float,
     beta: Float,
     sysNoise: Float,
@@ -511,6 +576,7 @@ suspend fun saveUserPreferences(
     azimuthOffset: Float
 ) {
     context.dataStore.edit { preferences ->
+        preferences[UserPreferencesKeys.WAREHOUSE_NAME] = warehouseName
         preferences[UserPreferencesKeys.STRIDE] = stride
 
         preferences[UserPreferencesKeys.BETA] = beta

@@ -182,7 +182,8 @@ class TimerUtils(
             }
             // 2. 写入蓝牙表头
             if (!bluetoothFile.exists()) {
-                bluetoothFile.writeText("timestamp,device_name,mac_address,rssi\n")
+                bluetoothFile.writeText("timestamp,ssid,bssid,frequency,level\n")
+//                bluetoothFile.writeText("timestamp,device_name,mac_address,rssi\n")
             }
             // 3. 新增: 写入 label.csv (如果需要)
             labelFile?.let {
@@ -249,7 +250,7 @@ class TimerUtils(
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
-    private suspend fun uploadSampledData(uploadUrl: String): Boolean {
+    private suspend fun uploadSampledData(warehouseName: String, uploadUrl: String): Boolean {
         val directory = dirPath
         if (directory == null || !directory.exists() || !directory.isDirectory) {
             Log.e("Upload", "Directory path is invalid or does not exist: $dirPath")
@@ -265,7 +266,7 @@ class TimerUtils(
         Log.i("Upload", "Starting upload process for directory: ${directory.name}")
 
         try {
-            val warehouseName = "hkust"
+//            val warehouseName = "wands"
             // 1. 获取一次当前时间的毫秒时间戳，并保存
             val currentTimeMillis = System.currentTimeMillis()
 
@@ -318,13 +319,14 @@ class TimerUtils(
 
     // 提供停止任务的方法
     @RequiresApi(Build.VERSION_CODES.O)
-    fun stopTask(apiBaseUrl:String) {
+    fun stopTask(warehouseName:String, apiBaseUrl:String) {
         sensorJob?.cancel(cause = CancellationException("Sensor task finished"))
         scanningJob?.cancel(cause = CancellationException("Scanning task finished"))
         isSensorTaskRunning.set(false)
         isScanningTaskRunning.set(false)
         uploadJob = uploadServiceScope.launch {
             uploadSampledData(
+                warehouseName = warehouseName,
                 uploadUrl = "$apiBaseUrl/data/upload"
             )
         }

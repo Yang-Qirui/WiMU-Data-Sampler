@@ -401,6 +401,8 @@ class MainActivity : ComponentActivity() {
                                 SettingScreen(
                                     context = this@MainActivity,
                                     navController = navController,
+                                    isReRegistering = serviceState.isReRegistering,
+                                    warehouseName = service.warehouseName,
                                     stride = service.stride,
                                     beta = service.beta,
                                     sysNoise = service.sysNoise,
@@ -410,6 +412,12 @@ class MainActivity : ComponentActivity() {
                                     mqttServerUrl = service.mqttServerUrl,
                                     apiBaseUrl = service.apiBaseUrl,
                                     azimuthOffset = service.azimuthOffset,
+                                    reRegisterMqttClient = {
+                                        frontService?.reRegisterMqttClient()
+                                    },
+                                    updateWarehouseName = { newWarehouseName ->
+                                        service.warehouseName = newWarehouseName
+                                    },
                                     updateStride = { newStride ->
                                         service.stride = newStride
                                     },

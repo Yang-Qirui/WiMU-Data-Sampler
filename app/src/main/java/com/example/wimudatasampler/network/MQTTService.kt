@@ -47,7 +47,7 @@ object MqttClient {
     }
 
     @RequiresApi(Build.VERSION_CODES.N_MR1)
-    fun initialize(context: Context, mqttServerUrl: String, apiBaseUrl:String) {
+    fun initialize(context: Context, warehouseName:String, mqttServerUrl: String, apiBaseUrl:String) {
         if (this::appContext.isInitialized) {
             Log.w(TAG, "MqttClient is already initialized.")
             return
@@ -55,17 +55,17 @@ object MqttClient {
         appContext = context.applicationContext
         prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         CoroutineScope(Dispatchers.IO).launch {
-            connect(mqttServerUrl = mqttServerUrl, apiBaseUrl = apiBaseUrl)
+            connect(warehouseName = warehouseName, mqttServerUrl = mqttServerUrl, apiBaseUrl = apiBaseUrl)
         }
     }
 
     @RequiresApi(Build.VERSION_CODES.N_MR1)
-    private suspend fun connect(mqttServerUrl:String, apiBaseUrl:String) {
+    private suspend fun connect(warehouseName: String, mqttServerUrl:String, apiBaseUrl:String) {
         if (pahoMqClient?.isConnected == true) {
             Log.d(TAG, "Already connected.")
             return
         }
-        val creds = getCredentialsFromPrefs() ?: fetchCredentialsFromServer(apiBaseUrl = apiBaseUrl)?.also {
+        val creds = getCredentialsFromPrefs() ?: fetchCredentialsFromServer(warehouseName = warehouseName, apiBaseUrl = apiBaseUrl)?.also {
             saveCredentialsToPrefs(it)
         }
         if (creds == null) {
@@ -175,7 +175,7 @@ object MqttClient {
     // --- 网络和辅助方法保持不变 ---
 
     @RequiresApi(Build.VERSION_CODES.N_MR1)
-    private suspend fun fetchCredentialsFromServer(apiBaseUrl:String): MqttCredentials? {
+    private suspend fun fetchCredentialsFromServer(warehouseName: String, apiBaseUrl:String): MqttCredentials? {
         return try {
             val deviceId = getDeviceId(appContext)
             val deviceName = getDeviceName(appContext)
@@ -183,7 +183,7 @@ object MqttClient {
             val response = ktorHttpClient.post("$apiBaseUrl/device/register") {
                 parameter("device_id", deviceId)
                 parameter("device_name", deviceName)
-                parameter("warehouse_id", "hkust") // TODO: Dynamically change warehouse
+                parameter("warehouse_id", warehouseName) // TODO: Dynamically change warehouse
             }
             if (response.status == HttpStatusCode.OK) {
                 val responseString = response.bodyAsText()
@@ -215,10 +215,61 @@ object MqttClient {
         }
     }
 
+    // 新增：用于清除 SharedPreferences 中存储的 MQTT 凭证
+    private fun clearCredentialsFromPrefs() {
+        Log.d(TAG, "Clearing stored MQTT credentials.")
+        prefs.edit(commit = true) {
+            remove(KEY_MQTT_USERNAME)
+            remove(KEY_MQTT_PASSWORD)
+        }
+    }
+
+    // 新增：核心的重新注册和连接方法
+    @RequiresApi(Build.VERSION_CODES.N_MR1)
+    suspend fun reRegisterAndConnect(warehouseName:String, mqttServerUrl: String, apiBaseUrl: String) {
+        // 0. 检查 MqttClient 是否已初始化
+        if (!this::appContext.isInitialized) {
+            Log.e(TAG, "MqttClient has not been initialized. Cannot re-register.")
+            return
+        }
+
+        Log.i(TAG, "Starting re-registration process...")
+
+        // 1. 断开现有连接（如果存在）
+        // disconnect() 方法会关闭客户端并将其设为 null
+        disconnect()
+        Log.d(TAG, "Previous connection disconnected.")
+
+        // 2. 清除旧的凭证
+        clearCredentialsFromPrefs()
+
+        // 3. 调用现有的 connect 方法
+        // 由于凭证已被清除，`connect` 方法会自动从服务器获取新凭证
+        Log.d(TAG, "Proceeding to connect with new credentials...")
+        connect(warehouseName = warehouseName, mqttServerUrl = mqttServerUrl, apiBaseUrl = apiBaseUrl)
+    }
+
+//    fun disconnect() {
+//        try {
+//            ktorHttpClient.close()
+//            pahoMqClient?.disconnect()
+//            pahoMqClient = null
+//        } catch (e: Exception) {
+//            Log.e(TAG, "Error during disconnection", e)
+//        }
+//    }
+
+//    --- 确保你的 disconnect 方法是这样的 ---
     fun disconnect() {
         try {
+            // 先尝试断开 Paho 客户端的连接
+            if (pahoMqClient?.isConnected == true) {
+                pahoMqClient?.disconnect()
+                Log.i(TAG, "MQTT client disconnected.")
+            }
+            // 关闭 Ktor HttpClient
             ktorHttpClient.close()
-            pahoMqClient?.disconnect()
+            // 将客户端实例置为 null，以便下次可以创建新的实例
             pahoMqClient = null
         } catch (e: Exception) {
             Log.e(TAG, "Error during disconnection", e)
