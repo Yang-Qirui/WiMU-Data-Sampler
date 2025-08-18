@@ -8,6 +8,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.util.Log
 import androidx.compose.runtime.mutableStateOf
+import java.sql.Timestamp
 
 class SensorUtils(context: Context) : SensorEventListener {
     private var sensorManager: SensorManager =
@@ -20,7 +21,7 @@ class SensorUtils(context: Context) : SensorEventListener {
         sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
     private var magnetometer: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
     private var gyroscope: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
-    private var myStepDetector = MyStepDetector()
+    private var myStepDetector = MyStepDetector({value -> setStepTimestamp(value)})
 
     private var lastRotationVector: FloatArray? = null
     private var lastStepCount: Float? = null
@@ -39,6 +40,10 @@ class SensorUtils(context: Context) : SensorEventListener {
         fun onMagChanged(mag: FloatArray)
         fun onMyStepChanged()
         fun updateOrientation()
+    }
+
+    private fun setStepTimestamp(timestamp: Long) {
+        lastStepTimestamp = timestamp
     }
 
     private var sensorDataListener: SensorDataListener? = null
@@ -133,7 +138,7 @@ class SensorUtils(context: Context) : SensorEventListener {
                 Log.d("Triggered step detector", "Debug")
                 if (event.values[0] == 1.0f) {
                     val ts = System.currentTimeMillis()
-                    lastStepTimestamp = ts
+//                    lastStepTimestamp = ts // Remove timestamp commercial
                     stepTimestamps.add(ts)
                     sensorDataListener?.onSingleStepChanged()
                 }

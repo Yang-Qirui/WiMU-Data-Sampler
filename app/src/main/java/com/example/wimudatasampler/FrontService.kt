@@ -151,13 +151,13 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
     var obsNoise = 3f
     var distFromLastPos = 0f
 
-    var period = 5f
+    var period = 3f
 
     var url = "http://limcpu1.cse.ust.hk:7860"
     var mqttServerUrl = MQTT_SERVER_URI
     var apiBaseUrl = API_BASE_URL
     var azimuthOffset = 90f
-    var warehouseName = "hkust"
+    var warehouseName = "jd-langfang"
     // 持久化的变量
 
     companion object {
@@ -608,7 +608,6 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
     }
 
     private fun onLatestWifiResultChanged(newValue: List<String>) {
-        val wifiTimestamp = newValue[0].trimIndent().split(" ")[0].toLong()
         try {
 //            var inputImuOffset = latestImuOffset ?: Offset(0f, 0f)
 //            if (lastMag > 80 || (latestValidation != null && !latestValidation)) {
@@ -724,14 +723,14 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                             directionBuffer.add(azimuth)
                         }
                     }
-//                    _serviceState.update {
-//                        it.copy(
-//                            targetOffset = Offset(
-//                                _serviceState.value.targetOffset.x + dx,
-//                                _serviceState.value.targetOffset.y + dy
-//                            )
-//                        )
-//                    }
+                    _serviceState.update {
+                        it.copy(
+                            targetOffset = Offset(
+                                _serviceState.value.targetOffset.x + dx,
+                                _serviceState.value.targetOffset.y + dy
+                            )
+                        )
+                    }
                 }
             }
         }
@@ -768,14 +767,14 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                             directionBuffer.add(azimuth)
                         }
                     }
-//                    _serviceState.update {
-//                        it.copy(
-//                            targetOffset = Offset(
-//                                _serviceState.value.targetOffset.x + dx,
-//                                _serviceState.value.targetOffset.y + dy
-//                            )
-//                        )
-//                    }
+                    _serviceState.update {
+                        it.copy(
+                            targetOffset = Offset(
+                                _serviceState.value.targetOffset.x + dx,
+                                _serviceState.value.targetOffset.y + dy
+                            )
+                        )
+                    }
                 }
             }
         }

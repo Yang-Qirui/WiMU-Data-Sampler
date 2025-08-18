@@ -10,5 +10,5 @@ object Config {
     const val PREFS_NAME = "MqttPrefs"
     const val KEY_MQTT_USERNAME = "mqtt_username"
     const val KEY_MQTT_PASSWORD = "mqtt_password"
-    const val JD_MODE = false
+    const val JD_MODE = true
 }

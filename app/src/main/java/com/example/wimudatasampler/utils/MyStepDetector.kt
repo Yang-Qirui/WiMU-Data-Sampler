@@ -11,7 +11,9 @@ import kotlin.math.sqrt
 /*
 * 算法的主要部分,检测是否是步点
 * */
-class MyStepDetector : SensorEventListener {
+class MyStepDetector(
+   private val setTimestamp: (Long) -> Unit
+): SensorEventListener {
     //存放三轴数据
     var oriValues: FloatArray = FloatArray(3)
     val ValueNum: Int = 4
@@ -104,6 +106,8 @@ class MyStepDetector : SensorEventListener {
                      * 2.例如记录的9步用户停住超过3秒，则前面的记录失效，下次从头开始
                      * 3.连续记录了9步用户还在运动，之前的数据才有效
                      * */
+                    val time = System.currentTimeMillis()
+                    setTimestamp(time)
                     mStepListeners?.onMyStepChanged()
                 }
                 if (timeOfNow - timeOfLastPeak >= TimeInterval
@@ -180,16 +184,17 @@ class MyStepDetector : SensorEventListener {
      * */
     fun averageValue(value: FloatArray, n: Int): Float {
         var ave = 0f
+        val sf = 0.6f
         for (i in 0..<n) {
             ave += value[i]
         }
         ave = ave / ValueNum
-        ave = if (ave >= 8) 4.3.toFloat()
-        else if (ave >= 7 && ave < 8) 3.3.toFloat()
-        else if (ave >= 4 && ave < 7) 2.3.toFloat()
-        else if (ave >= 3 && ave < 4) 2.0.toFloat()
+        ave = if (ave >= 8) (4.3 * sf).toFloat()
+        else if (ave >= 7 && ave < 8) (3.3 * sf).toFloat()
+        else if (ave >= 4 && ave < 7) (2.3 * sf).toFloat()
+        else if (ave >= 3 && ave < 4) (2.0 * sf).toFloat()
         else {
-            1.3.toFloat()
+            (1.3 * sf).toFloat()
         }
         return ave
     }
