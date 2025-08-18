@@ -293,9 +293,9 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                             wifiScanningResults = scanResults.map { scanResult ->
                                 "${wifiTimestamp},${scanResult.SSID},${scanResult.BSSID},${scanResult.frequency},${scanResult.level}\n"
                             }.toMutableList()
-                            if (_serviceState.value.isLocatingStarted) {
-                                locatingServiceScope.launch { onLatestWifiResultChanged(wifiScanningResults.toList()) }
-                            }
+//                            if (_serviceState.value.isLocatingStarted) {
+//                                locatingServiceScope.launch { onLatestWifiResultChanged(wifiScanningResults.toList()) } //TODO: changed to bluetooth
+//                            }
                             _serviceState.update { it.copy(wifiScanningInfo = timer.wifiScanningInfo) }
                         }
                     } else {
@@ -568,9 +568,11 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
         _serviceState.update { it.copy(isMyStepDetectorEnabled = false) }
     }
 
+    @SuppressLint("MissingPermission")
     fun startLocating() {
         _serviceState.update { it.copy(isLocatingStarted = true) }
         motionSensorManager.startMonitoring(this@FrontService)
+        startBluetoothScan()
         locatingServiceScope.launch {
             while (isServiceRunning) {
                 val success = wifiManager.startScan()
@@ -578,6 +580,42 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
 //                if (success) {
 //                    _serviceState.update { it.copy(isLoadingStarted = true) }
 //                }
+                // 1. DATA TO WRITE NOW:
+                //    Use the timestamp from the Wi-Fi scan that just finished
+                //    to format the Bluetooth results from the PREVIOUS cycle, which are in the buffer.
+                val directionSnapshot = bufferMutex.withLock {
+                    directionBuffer.toList().also {
+                        directionBuffer.clear()
+                    }
+                }
+                val displacement = calculateTotalDisplacement(directionSnapshot, stride)
+                _serviceState.update { it.copy(imuOffset = displacement) }
+                val resultsToWrite = bufferedBluetoothResults.map { result ->
+                    "${this@FrontService.latestWifiTimestamp},${result.device.name ?: "N/A"},${result.device.address},2462,${result.rssi}\n"
+                }
+
+                // 2. PREPARE FOR THE NEXT CYCLE:
+                //    Move the results collected in the cycle that JUST ENDED (which are in the main list)
+                //    into the buffer. They will wait there until the next Wi-Fi timestamp arrives.
+                bufferedBluetoothResults = bluetoothScanningResults.toMutableList()
+                Log.d("BLE", resultsToWrite.toString())
+                publishData(
+                    topicSuffix = "inference",
+                    data = MqttClient.InferenceData(
+                        deviceId = deviceId,
+                        wifiList = resultsToWrite,
+                        imuOffset = Pair(displacement.x, displacement.y),
+                        sysNoise = sysNoise,
+                        obsNoise = obsNoise,
+                    )
+                )
+                // 3. CLEAR THE MAIN LIST:
+                //    The main collection list is now empty, ready to start collecting new
+                //    Bluetooth results for the upcoming cycle.
+                bluetoothScanningResults.clear()
+
+                // 4. RETURN THE DATA TO BE WRITTEN:
+                //    Send the formatted data from the previous cycle to TimerUtils.
                 delay((period * 1000).toLong())
             }
         }
@@ -609,11 +647,6 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
 
     private fun onLatestWifiResultChanged(newValue: List<String>) {
         try {
-//            var inputImuOffset = latestImuOffset ?: Offset(0f, 0f)
-//            if (lastMag > 80 || (latestValidation != null && !latestValidation)) {
-////                sysNoise = 4f
-//                inputImuOffset = Offset(0f, 0f)
-//            }
 
             serviceScope.launch {
                 if (!firstStart) {
