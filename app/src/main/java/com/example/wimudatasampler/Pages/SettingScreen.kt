@@ -32,6 +32,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -64,7 +65,10 @@ import kotlin.math.pow
 fun SettingScreen(
     modifier: Modifier = Modifier,
     context: Context,
+    useBleLocating: Boolean,
     isReRegistering: Boolean,
+    isBluetoothTimeWindowEnabled: Boolean,
+    bluetoothTimeWindowSeconds: Float,
     warehouseName:String,
     navController: NavController,
     stride: Float,
@@ -77,7 +81,10 @@ fun SettingScreen(
     apiBaseUrl:String,
     azimuthOffset: Float,
     reRegisterMqttClient:() -> Unit,
+    updateUseBleLocating:(Boolean) -> Unit,
     updateWarehouseName:(String) -> Unit,
+    updateIsBluetoothTimeWindowEnabled:(Boolean) -> Unit,
+    updateBluetoothTimeWindowSeconds: (Float) ->Unit,
     updateStride: (Float) ->Unit,
     updateBeta: (Float) ->Unit,
     updateSysNoise: (Float) -> Unit,
@@ -148,7 +155,11 @@ fun SettingScreen(
         }
     ) { innerPadding ->
 
+        val lifecycle = LocalLifecycleOwner.current.lifecycle
+        val lifecycleScope = remember { lifecycle.coroutineScope }
+
         var curWarehouseName by remember { mutableStateOf(warehouseName) }
+        var curBluetoothTimeWindowSeconds by remember { mutableStateOf(bluetoothTimeWindowSeconds.toString()) }
         var curStride by remember { mutableStateOf(stride.toString()) }
         var curBeta by remember { mutableStateOf(beta.toString()) }
         var curSysNoise by remember { mutableStateOf(sysNoise.toString()) }
@@ -169,6 +180,54 @@ fun SettingScreen(
             val styleScriptFamily = FontFamily(
                 Font(R.font.style_script, FontWeight.Normal),
             )
+
+            Button(
+                enabled = true,
+                onClick = {
+                    updateUseBleLocating(!useBleLocating)
+                    lifecycleScope.launch {
+                        context.dataStore.edit { preferences ->
+                            preferences[UserPreferencesKeys.USE_BLE_LOCATING] = !useBleLocating
+                        }
+                    }
+                }
+            ) {
+                if (useBleLocating) {
+                    Text("Locating using Bluetooth")
+                } else {
+                    Text("Locating using Wi-Fi")
+                }
+            }
+
+
+            Column(
+                modifier = Modifier
+                    .padding(8.dp)
+            ) {
+                Text(
+                    text = "Warehouse Name",
+                    style = TextStyle(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    ),
+                    fontFamily = styleScriptFamily,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp)
+                )
+                OutlinedTextField(
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Done
+                    ),
+                    value = curWarehouseName,
+                    onValueChange = { value ->
+                        curWarehouseName = value
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("") }
+                )
+            }
 
             // 重新注册按钮
             Button(
@@ -198,7 +257,7 @@ fun SettingScreen(
                     .padding(8.dp)
             ) {
                 Text(
-                    text = "Warehouse Name",
+                    text = "Bluetooth Time Window Seconds",
                     style = TextStyle(
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
@@ -209,17 +268,36 @@ fun SettingScreen(
                         .padding(bottom = 4.dp)
                 )
                 OutlinedTextField(
+                    enabled = isBluetoothTimeWindowEnabled,
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text,
+                        keyboardType = KeyboardType.Decimal,
                         imeAction = ImeAction.Done
                     ),
-                    value = curWarehouseName,
+                    value = curBluetoothTimeWindowSeconds,
                     onValueChange = { value ->
-                        curWarehouseName = value
+                        curBluetoothTimeWindowSeconds = value
                     },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("") }
                 )
+            }
+
+            Button(
+                enabled = true,
+                onClick = {
+                    updateIsBluetoothTimeWindowEnabled(!isBluetoothTimeWindowEnabled)
+                    lifecycleScope.launch {
+                        context.dataStore.edit { preferences ->
+                            preferences[UserPreferencesKeys.IS_BLUETOOTH_TIME_WINDOW_ENABLED] = !isBluetoothTimeWindowEnabled
+                        }
+                    }
+                }
+            ) {
+                if (isBluetoothTimeWindowEnabled) {
+                    Text("Bluetooth time window enabled")
+                } else {
+                    Text("Bluetooth time window disabled")
+                }
             }
 
             Column(
@@ -506,17 +584,14 @@ fun SettingScreen(
                 }
             }
 
-            val lifecycle = LocalLifecycleOwner.current.lifecycle
-            val lifecycleScope = remember { lifecycle.coroutineScope }
-
             Button(
                 onClick = {
                     lifecycleScope.launch {
                         try {
-
                             saveUserPreferences(
                                 context = context,
                                 warehouseName = curWarehouseName,
+                                bluetoothTimeWindowSeconds = curBluetoothTimeWindowSeconds.toFloatOrNull() ?: bluetoothTimeWindowSeconds,
                                 stride = curStride.toFloatOrNull() ?: stride,
                                 beta = curBeta.toFloatOrNull() ?: beta,
                                 sysNoise = curSysNoise.toFloatOrNull() ?: sysNoise,
@@ -527,6 +602,8 @@ fun SettingScreen(
                                 apiBaseUrl = curApiBaseUrl,
                                 azimuthOffset = curAzimuthOffset.toFloatOrNull()?:azimuthOffset
                             )
+                            updateWarehouseName(curWarehouseName)
+                            updateBluetoothTimeWindowSeconds(curBluetoothTimeWindowSeconds.toFloatOrNull() ?: bluetoothTimeWindowSeconds)
                             updateStride(curStride.toFloatOrNull() ?: stride)
                             updateBeta(curBeta.toFloatOrNull() ?: beta)
                             updateSysNoise(curSysNoise.toFloatOrNull() ?: sysNoise)
@@ -565,6 +642,7 @@ fun SettingScreen(
 suspend fun saveUserPreferences(
     context: Context,
     warehouseName: String,
+    bluetoothTimeWindowSeconds: Float,
     stride: Float,
     beta: Float,
     sysNoise: Float,
@@ -577,6 +655,8 @@ suspend fun saveUserPreferences(
 ) {
     context.dataStore.edit { preferences ->
         preferences[UserPreferencesKeys.WAREHOUSE_NAME] = warehouseName
+        preferences[UserPreferencesKeys.BLUETOOTH_TIME_WINDOW_SECONDS] = bluetoothTimeWindowSeconds
+
         preferences[UserPreferencesKeys.STRIDE] = stride
 
         preferences[UserPreferencesKeys.BETA] = beta

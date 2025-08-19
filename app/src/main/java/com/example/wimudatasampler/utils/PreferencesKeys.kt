@@ -1,5 +1,6 @@
 package com.example.wimudatasampler.utils
 
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -21,4 +22,9 @@ object UserPreferencesKeys {
     val AZIMUTH_OFFSET = floatPreferencesKey("azimuth_offset")
 
     val WAREHOUSE_NAME = stringPreferencesKey("warehouse_name")
+
+    val USE_BLE_LOCATING =booleanPreferencesKey("use_ble_locating")
+
+    val IS_BLUETOOTH_TIME_WINDOW_ENABLED = booleanPreferencesKey("is_bluetooth_time_window_enabled")
+    val BLUETOOTH_TIME_WINDOW_SECONDS = floatPreferencesKey("bluetooth_time_window_seconds")
 }

@@ -73,6 +73,9 @@ data class ServiceState(
     var isLoadingStarted: Boolean = false,
     var isImuEnabled: Boolean = true,
     var isMyStepDetectorEnabled: Boolean = false, //TODO: use own step detector
+    var useBleLocating: Boolean = false,
+    var isBluetoothTimeWindowEnabled: Boolean = true, // 默认开启
+    var bluetoothTimeWindowSeconds: Float = 0.5F,     // 默认0.5秒 (500毫秒)
     //Sampling Page Data
     val yaw: Float = 0.0F,
     val pitch: Float = 0.0F,
@@ -125,7 +128,6 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
     private var wifiScanningResults = mutableListOf<String>()
     // 蓝牙扫描结果列表
     private var bluetoothScanningResults = mutableListOf<ScanResult>()
-
     private var bufferedBluetoothResults = mutableListOf<ScanResult>()
     // --- A variable to hold the latest Wi-Fi timestamp ---
     private var latestWifiTimestamp: Long = 0L
@@ -265,6 +267,9 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                 apiBaseUrl = preferences[UserPreferencesKeys.API_BASE_URL] ?: apiBaseUrl
                 azimuthOffset = preferences[UserPreferencesKeys.AZIMUTH_OFFSET] ?: azimuthOffset
                 warehouseName = preferences[UserPreferencesKeys.WAREHOUSE_NAME] ?: warehouseName
+                warehouseName = preferences[UserPreferencesKeys.WAREHOUSE_NAME] ?: warehouseName
+                _serviceState.update { it.copy(useBleLocating = preferences[UserPreferencesKeys.USE_BLE_LOCATING] ?: _serviceState.value.useBleLocating) }
+                _serviceState.update { it.copy(bluetoothTimeWindowSeconds = preferences[UserPreferencesKeys.BLUETOOTH_TIME_WINDOW_SECONDS] ?: _serviceState.value.bluetoothTimeWindowSeconds) }
                 // 在加载完URL后，初始化 MqttClient
 //                MqttClient.initialize(this@FrontService, mqttServerUrl = mqttServerUrl, apiBaseUrl = apiBaseUrl)
 //                MqttClient.setCommandListener(this@FrontService)
@@ -316,31 +321,51 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
             deviceId = deviceId,
             coroutineScope = samplingServiceScope,
             // Wi-Fi callbacks
-            getWiFiScanningResultCallback = { wifiScanningResults.toList().also { wifiScanningResults.clear() } },
+            getWiFiScanningResultCallback = {
+                wifiScanningResults.toList().also { wifiScanningResults.clear() }
+            },
             clearWiFiScanningResultCallback = { wifiScanningResults.clear() },
             wifiManagerScanning = { wifiManager.startScan() },
             // 新增: Bluetooth callbacks
             getBluetoothScanningResultCallback = {
-                // 1. DATA TO WRITE NOW:
-                //    Use the timestamp from the Wi-Fi scan that just finished
-                //    to format the Bluetooth results from the PREVIOUS cycle, which are in the buffer.
-                val resultsToWrite = bufferedBluetoothResults.map { result ->
+                // 1. 获取当前时间戳，作为时间窗口的结束点
+                val windowEndTime = System.currentTimeMillis()
+
+                // 2. 如果启用了时间窗口，计算窗口的起始点
+                val windowStartTime = if (_serviceState.value.isBluetoothTimeWindowEnabled) {
+                    windowEndTime - (_serviceState.value.bluetoothTimeWindowSeconds * 1000).toLong()
+                } else {
+                    0L // 如果未启用，则起始时间为0，意味着接受所有数据
+                }
+
+                // 3. 过滤当前缓冲区(bufferedBluetoothResults)中的数据
+                val filteredResults = bufferedBluetoothResults.filter { result ->
+                    // 将 ScanResult 的纳秒时间戳转换为毫秒
+                    val resultTimestamp = System.currentTimeMillis() - SystemClock.elapsedRealtime() + (result.timestampNanos / 1_000_000)
+                    // 只保留在 [windowStartTime, windowEndTime] 区间内的数据
+                    resultTimestamp in windowStartTime..windowEndTime
+                }
+
+                // 如果需要调试，可以打印过滤前后的数量
+                if (_serviceState.value.isBluetoothTimeWindowEnabled) {
+                    Log.d("BluetoothFilter", "Filtering: ${bufferedBluetoothResults.size} -> ${filteredResults.size} results within ${windowEndTime - windowStartTime}ms window.")
+                }
+
+                // 4. 使用过滤后的结果(filteredResults)来格式化并准备写入文件
+                val resultsToWrite = filteredResults.map { result ->
+                    // 使用最新的 Wi-Fi 时间戳进行格式化（这部分逻辑保持不变）
                     "${this@FrontService.latestWifiTimestamp},${result.device.name ?: "N/A"},${result.device.address},2462,${result.rssi}\n"
                 }
 
-                // 2. PREPARE FOR THE NEXT CYCLE:
-                //    Move the results collected in the cycle that JUST ENDED (which are in the main list)
-                //    into the buffer. They will wait there until the next Wi-Fi timestamp arrives.
+                // 5. 将当前主列表中的数据移入缓冲区，为下一个周期做准备 (这部分逻辑保持不变)
                 bufferedBluetoothResults = bluetoothScanningResults.toMutableList()
 
-                // 3. CLEAR THE MAIN LIST:
-                //    The main collection list is now empty, ready to start collecting new
-                //    Bluetooth results for the upcoming cycle.
+                // 6. 清空主列表 (这部分逻辑保持不变)
                 bluetoothScanningResults.clear()
 
-                // 4. RETURN THE DATA TO BE WRITTEN:
-                //    Send the formatted data from the previous cycle to TimerUtils.
-                resultsToWrite},
+                // 7. 返回格式化好的、将被写入文件的数据
+                resultsToWrite
+            },
             clearBluetoothScanningResultCallback = { bluetoothScanningResults.clear() },
             context = this@FrontService
         )
@@ -445,6 +470,18 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
         isServiceRunning = false
         stopForeground(true)
         stopSelf()
+    }
+
+    fun updateUseBleLocating(newValue: Boolean) {
+        _serviceState.update { it.copy(useBleLocating = newValue) }
+    }
+
+    fun updateIsBluetoothTimeWindowEnabled(newValue: Boolean) {
+        _serviceState.update { it.copy(isBluetoothTimeWindowEnabled = newValue) }
+    }
+
+    fun updateBluetoothTimeWindowSeconds(newValue: Float) {
+        _serviceState.update { it.copy(bluetoothTimeWindowSeconds = newValue) }
     }
 
     fun updateWifiSamplingCycles(newValue: Float) {
@@ -572,54 +609,91 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
     fun startLocating() {
         _serviceState.update { it.copy(isLocatingStarted = true) }
         motionSensorManager.startMonitoring(this@FrontService)
-        startBluetoothScan()
-        locatingServiceScope.launch {
-            while (isServiceRunning) {
-                val success = wifiManager.startScan()
-                Log.d("StartLocating", "Triggered")
+        if (_serviceState.value.useBleLocating) {
+            startBluetoothScan()
+            locatingServiceScope.launch {
+                while (isServiceRunning) {
+//                    val success = wifiManager.startScan()
+                    Log.d("StartLocating", "Triggered")
 //                if (success) {
 //                    _serviceState.update { it.copy(isLoadingStarted = true) }
 //                }
-                // 1. DATA TO WRITE NOW:
-                //    Use the timestamp from the Wi-Fi scan that just finished
-                //    to format the Bluetooth results from the PREVIOUS cycle, which are in the buffer.
-                val directionSnapshot = bufferMutex.withLock {
-                    directionBuffer.toList().also {
-                        directionBuffer.clear()
+                    // 1. 获取当前时间戳，作为时间窗口的结束点
+                    val windowEndTime = System.currentTimeMillis()
+
+                    // 2. 如果启用了时间窗口，计算窗口的起始点
+                    val windowStartTime = if (_serviceState.value.isBluetoothTimeWindowEnabled) {
+                        windowEndTime - (_serviceState.value.bluetoothTimeWindowSeconds * 1000).toLong()
+                    } else {
+                        0L // 如果未启用，则起始时间为0，意味着接受所有数据
                     }
-                }
-                val displacement = calculateTotalDisplacement(directionSnapshot, stride)
-                _serviceState.update { it.copy(imuOffset = displacement) }
-                val resultsToWrite = bufferedBluetoothResults.map { result ->
-                    "${this@FrontService.latestWifiTimestamp},${result.device.name ?: "N/A"},${result.device.address},2462,${result.rssi}\n"
-                }
 
-                // 2. PREPARE FOR THE NEXT CYCLE:
-                //    Move the results collected in the cycle that JUST ENDED (which are in the main list)
-                //    into the buffer. They will wait there until the next Wi-Fi timestamp arrives.
-                bufferedBluetoothResults = bluetoothScanningResults.toMutableList()
-                Log.d("BLE", resultsToWrite.toString())
-                publishData(
-                    topicSuffix = "inference",
-                    data = MqttClient.InferenceData(
-                        deviceId = deviceId,
-                        wifiList = resultsToWrite,
-                        imuOffset = Pair(displacement.x, displacement.y),
-                        sysNoise = sysNoise,
-                        obsNoise = obsNoise,
+                    // 3. 过滤当前缓冲区(bufferedBluetoothResults)中的数据
+                    val filteredBleResults = bufferedBluetoothResults.filter { result ->
+                        // 将 ScanResult 的纳秒时间戳转换为毫秒
+                        val resultTimestamp = System.currentTimeMillis() - SystemClock.elapsedRealtime() + (result.timestampNanos / 1_000_000)
+                        // 只保留在 [windowStartTime, windowEndTime] 区间内的数据
+                        resultTimestamp in windowStartTime..windowEndTime
+                    }
+
+                    // 如果需要调试，可以打印过滤前后的数量
+                    if (_serviceState.value.isBluetoothTimeWindowEnabled) {
+                        Log.d("BluetoothFilter_Infer", "Filtering: ${bufferedBluetoothResults.size} -> ${filteredBleResults.size} results within ${windowEndTime - windowStartTime}ms window.")
+                    }
+
+                    // 1. DATA TO WRITE NOW:
+                    //    Use the timestamp from the Wi-Fi scan that just finished
+                    //    to format the Bluetooth results from the PREVIOUS cycle, which are in the buffer.
+                    val directionSnapshot = bufferMutex.withLock {
+                        directionBuffer.toList().also {
+                            directionBuffer.clear()
+                        }
+                    }
+                    val displacement = calculateTotalDisplacement(directionSnapshot, stride)
+                    _serviceState.update { it.copy(imuOffset = displacement) }
+                    val resultsToWrite = filteredBleResults.map { result ->
+                        "${this@FrontService.latestWifiTimestamp},${result.device.name ?: "N/A"},${result.device.address},2462,${result.rssi}\n"
+                    }
+
+                    // 2. PREPARE FOR THE NEXT CYCLE:
+                    //    Move the results collected in the cycle that JUST ENDED (which are in the main list)
+                    //    into the buffer. They will wait there until the next Wi-Fi timestamp arrives.
+                    bufferedBluetoothResults = bluetoothScanningResults.toMutableList()
+                    Log.d("BLE", resultsToWrite.toString())
+                    publishData(
+                        topicSuffix = "inference",
+                        data = MqttClient.InferenceData(
+                            deviceId = deviceId,
+                            wifiList = resultsToWrite,
+                            imuOffset = Pair(displacement.x, displacement.y),
+                            sysNoise = sysNoise,
+                            obsNoise = obsNoise,
+                        )
                     )
-                )
-                // 3. CLEAR THE MAIN LIST:
-                //    The main collection list is now empty, ready to start collecting new
-                //    Bluetooth results for the upcoming cycle.
-                bluetoothScanningResults.clear()
+                    // 3. CLEAR THE MAIN LIST:
+                    //    The main collection list is now empty, ready to start collecting new
+                    //    Bluetooth results for the upcoming cycle.
+                    bluetoothScanningResults.clear()
 
-                // 4. RETURN THE DATA TO BE WRITTEN:
-                //    Send the formatted data from the previous cycle to TimerUtils.
-                delay((period * 1000).toLong())
+                    // 4. RETURN THE DATA TO BE WRITTEN:
+                    //    Send the formatted data from the previous cycle to TimerUtils.
+                    delay((period * 1000).toLong())
+                }
             }
+            publishData("ack", data = AckData(deviceId = deviceId, ackInfo = "inference_on"))
+        } else {
+            locatingServiceScope.launch {
+                while (isServiceRunning) {
+                    val success = wifiManager.startScan()
+                    Log.d("StartLocating", "Triggered")
+//                if (success) {
+//                    _serviceState.update { it.copy(isLoadingStarted = true) }
+//                }
+                    delay((period * 1000).toLong())
+                }
+            }
+            publishData("ack", data = AckData(deviceId = deviceId, ackInfo = "inference_on"))
         }
-        publishData("ack", data = AckData(deviceId = deviceId, ackInfo = "inference_on"))
     }
 
     fun refreshLocating() {

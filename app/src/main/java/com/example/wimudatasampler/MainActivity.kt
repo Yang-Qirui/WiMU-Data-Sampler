@@ -45,6 +45,7 @@ import com.example.wimudatasampler.Pages.SettingScreen
 import com.example.wimudatasampler.navigation.MainActivityDestinations
 import com.example.wimudatasampler.ui.theme.WiMUTheme
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
@@ -402,6 +403,9 @@ class MainActivity : ComponentActivity() {
                                     context = this@MainActivity,
                                     navController = navController,
                                     isReRegistering = serviceState.isReRegistering,
+                                    useBleLocating = serviceState.useBleLocating,
+                                    isBluetoothTimeWindowEnabled = serviceState.isBluetoothTimeWindowEnabled,
+                                    bluetoothTimeWindowSeconds = serviceState.bluetoothTimeWindowSeconds,
                                     warehouseName = service.warehouseName,
                                     stride = service.stride,
                                     beta = service.beta,
@@ -415,8 +419,17 @@ class MainActivity : ComponentActivity() {
                                     reRegisterMqttClient = {
                                         frontService?.reRegisterMqttClient()
                                     },
+                                    updateUseBleLocating = { newUseBleLocating ->
+                                        frontService?.updateUseBleLocating(newValue = newUseBleLocating)
+                                    },
+                                    updateIsBluetoothTimeWindowEnabled = { newIsBluetoothTimeWindowEnabled ->
+                                        frontService?.updateIsBluetoothTimeWindowEnabled(newValue = newIsBluetoothTimeWindowEnabled)
+                                    },
+                                    updateBluetoothTimeWindowSeconds = { newBluetoothTimeWindowSeconds ->
+                                        frontService?.updateBluetoothTimeWindowSeconds(newValue = newBluetoothTimeWindowSeconds)
+                                    },
                                     updateWarehouseName = { newWarehouseName ->
-                                        service.warehouseName = newWarehouseName
+                                        frontService?.reRegisterMqttClient()
                                     },
                                     updateStride = { newStride ->
                                         service.stride = newStride
