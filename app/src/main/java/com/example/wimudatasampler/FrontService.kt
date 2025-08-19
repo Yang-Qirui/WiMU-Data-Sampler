@@ -39,12 +39,10 @@ import com.example.wimudatasampler.network.MqttClient.publishData
 import com.example.wimudatasampler.utils.CoroutineLockIndexedList
 import com.example.wimudatasampler.utils.calculateTotalDisplacement
 import com.example.wimudatasampler.utils.MqttCommandListener
-import com.example.wimudatasampler.utils.Quadruple
 import com.example.wimudatasampler.utils.SensorUtils
 import com.example.wimudatasampler.utils.TimerUtils
 import com.example.wimudatasampler.utils.UserPreferencesKeys
 import com.example.wimudatasampler.utils.lowPassFilter
-import com.example.wimudatasampler.utils.validPostureCheck
 import com.example.wimudatasampler.utils.getDeviceId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -328,45 +326,13 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
             wifiManagerScanning = { wifiManager.startScan() },
             // 新增: Bluetooth callbacks
             getBluetoothScanningResultCallback = {
-                // 1. 获取当前时间戳，作为时间窗口的结束点
-                val windowEndTime = System.currentTimeMillis()
-
-                // 2. 如果启用了时间窗口，计算窗口的起始点
-                val windowStartTime = if (_serviceState.value.isBluetoothTimeWindowEnabled) {
-                    windowEndTime - (_serviceState.value.bluetoothTimeWindowSeconds * 1000).toLong()
-                } else {
-                    0L // 如果未启用，则起始时间为0，意味着接受所有数据
-                }
-
-                // 3. 过滤当前缓冲区(bufferedBluetoothResults)中的数据
-                val filteredResults = bufferedBluetoothResults.filter { result ->
-                    // 将 ScanResult 的纳秒时间戳转换为毫秒
-                    val resultTimestamp = System.currentTimeMillis() - SystemClock.elapsedRealtime() + (result.timestampNanos / 1_000_000)
-                    // 只保留在 [windowStartTime, windowEndTime] 区间内的数据
-                    resultTimestamp in windowStartTime..windowEndTime
-                }
-
-                // 如果需要调试，可以打印过滤前后的数量
-                if (_serviceState.value.isBluetoothTimeWindowEnabled) {
-                    Log.d("BluetoothFilter", "Filtering: ${bufferedBluetoothResults.size} -> ${filteredResults.size} results within ${windowEndTime - windowStartTime}ms window.")
-                }
-
-                // 4. 使用过滤后的结果(filteredResults)来格式化并准备写入文件
-                val resultsToWrite = filteredResults.map { result ->
-                    // 使用最新的 Wi-Fi 时间戳进行格式化（这部分逻辑保持不变）
-                    "${this@FrontService.latestWifiTimestamp},${result.device.name ?: "N/A"},${result.device.address},2462,${result.rssi}\n"
-                }
-
-                // 5. 将当前主列表中的数据移入缓冲区，为下一个周期做准备 (这部分逻辑保持不变)
-                bufferedBluetoothResults = bluetoothScanningResults.toMutableList()
-
-                // 6. 清空主列表 (这部分逻辑保持不变)
-                bluetoothScanningResults.clear()
-
-                // 7. 返回格式化好的、将被写入文件的数据
-                resultsToWrite
+                // 直接返回当前收集到的所有蓝牙数据快照 (类型是 List<ScanResult>)
+                bluetoothScanningResults.toList()
             },
-            clearBluetoothScanningResultCallback = { bluetoothScanningResults.clear() },
+            clearBluetoothScanningResultCallback = {
+                // TimerUtils处理完后，会调用这个来清空列表
+                bluetoothScanningResults.clear()
+            },
             context = this@FrontService
         )
         motionSensorManager = SensorUtils(this@FrontService)
@@ -532,7 +498,9 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                 timestamp = currentTimeInText,
                 dirName = _serviceState.value.saveDirectory,
                 collectWaypoint = true,
-                waypointPosition = labelPoint
+                waypointPosition = labelPoint,
+                isBluetoothTimeWindowEnabled = _serviceState.value.isBluetoothTimeWindowEnabled,
+                bluetoothTimeWindowSeconds = _serviceState.value.bluetoothTimeWindowSeconds
             )
         }
         motionSensorManager.startMonitoring(this@FrontService)
@@ -569,6 +537,8 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                 timestamp = currentTimeInText,
                 dirName = _serviceState.value.saveDirectory,
                 collectWaypoint = false,
+                isBluetoothTimeWindowEnabled = _serviceState.value.isBluetoothTimeWindowEnabled,
+                bluetoothTimeWindowSeconds = _serviceState.value.bluetoothTimeWindowSeconds
             )
         }
         motionSensorManager.startMonitoring(this@FrontService)

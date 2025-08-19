@@ -1,9 +1,12 @@
 package com.example.wimudatasampler.utils
 
+import android.annotation.SuppressLint
+import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.hardware.SensorManager
 import android.os.Build
 import android.os.Environment
+import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.getValue
@@ -44,8 +47,8 @@ class TimerUtils(
     private val clearWiFiScanningResultCallback: () -> Unit,
     private val wifiManagerScanning: () -> Boolean,
     // Bluetooth Callbacks
-    private val getBluetoothScanningResultCallback: () -> List<String>,
-    private val clearBluetoothScanningResultCallback: () -> Unit,
+    private val getBluetoothScanningResultCallback: () -> List<ScanResult>, // 获取原始蓝牙数据
+    private val clearBluetoothScanningResultCallback: () -> Unit, // 清理蓝牙数据缓存
     context: Context,
 ){
     private var isSensorTaskRunning = AtomicBoolean(false)
@@ -148,12 +151,22 @@ class TimerUtils(
         }
     }
 
+    // 在你的 TimerUtils.kt 文件中
+
+// --- 假设你的 TimerUtils 构造函数现在接收这些回调 ---
+// private val getBluetoothScanningResultCallback: () -> List<ScanResult>, // 注意：类型从 List<String> 变为 List<ScanResult>
+// private val clearBluetoothScanningResultCallback: () -> Unit,
+
+    @SuppressLint("MissingPermission")
     fun runScanningTaskAtFrequency(
         frequencyY: Double, // Wi-Fi & 蓝牙 采集频率 (秒)
         timestamp: String,
         dirName: String,
         collectWaypoint: Boolean,
         waypointPosition: Offset? = null,
+        // --- 新增参数 ---
+        isBluetoothTimeWindowEnabled: Boolean,
+        bluetoothTimeWindowSeconds: Float
     ) {
         isCollectLabel = collectWaypoint
         val appDir = File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "WiMU data")
@@ -171,43 +184,36 @@ class TimerUtils(
         dirPath = dir
         val wifiFile = File(dir, "wifi.csv")
         val bluetoothFile = File(dir, "bluetooth.csv")
-        // label.csv 文件
         val labelFile = if (collectWaypoint) File(dir, "label.csv") else null
 
-        // --- 写入表头 ---
         try {
-            // 1. 写入 Wi-Fi 表头
             if (!wifiFile.exists()) {
                 wifiFile.writeText("timestamp,ssid,bssid,frequency,level\n")
             }
-            // 2. 写入蓝牙表头
             if (!bluetoothFile.exists()) {
-                bluetoothFile.writeText("timestamp,ssid,bssid,frequency,level\n")
-//                bluetoothFile.writeText("timestamp,device_name,mac_address,rssi\n")
+                // MODIFIED: 使用了正确的蓝牙表头
+                bluetoothFile.writeText("timestamp,device_name,mac_address,rssi\n")
             }
-            // 3. 新增: 写入 label.csv (如果需要)
             labelFile?.let {
                 if (!it.exists()) {
-                    it.writeText("waypoint_x,waypoint_y\n") // 写入表头
-                    // 同时写入坐标数据，因为它只在采集开始时有一次
+                    it.writeText("waypoint_x,waypoint_y\n")
                     it.appendText("${waypointPosition?.x},${waypointPosition?.y}\n")
                 }
             }
         } catch (e: IOException) {
             e.printStackTrace()
-            // Handle error
         }
 
         isScanningTaskRunning.set(true)
-        // 清空两种扫描结果的回调
         clearWiFiScanningResultCallback()
-        clearBluetoothScanningResultCallback()
+        clearBluetoothScanningResultCallback() // 确保开始前清理蓝牙缓存
 
         scanningJob = coroutineScope.launch {
             while (isScanningTaskRunning.get() && isActive) {
+
+                // --- Wi-Fi 部分逻辑保持不变 ---
                 val invokeSuccess = wifiManagerScanning()
                 Log.d("INVOKE_SCAN", "[${System.currentTimeMillis()}] Wi-Fi: $invokeSuccess, BT: triggered")
-
                 try {
                     if (!isScanningTaskRunning.get()) return@launch
                     val wifiResults = getWiFiScanningResultCallback().toMutableList()
@@ -223,13 +229,42 @@ class TimerUtils(
                         e.printStackTrace()
                     }
 
-                    // 获取蓝牙结果并写入
-                    val bluetoothResults = getBluetoothScanningResultCallback().toMutableList()
+                    // ******************************************************
+                    // ************  蓝牙逻辑核心修改部分开始  ************
+                    // ******************************************************
+
+                    // 1. 定义时间窗口
+                    val windowEndTime = System.currentTimeMillis()
+                    val windowStartTime = if (isBluetoothTimeWindowEnabled) {
+                        windowEndTime - (bluetoothTimeWindowSeconds *1000).toLong()
+                    } else {
+                        0L // 如果禁用，则不过滤
+                    }
+
+                    // 2. 获取原始的蓝牙扫描结果 (List<ScanResult>)
+                    val allBluetoothResults = getBluetoothScanningResultCallback()
+
+                    // 3. 应用时间窗口进行过滤
+                    val filteredBluetoothResults = allBluetoothResults.filter { result ->
+                        val resultTimestamp = System.currentTimeMillis() - SystemClock.elapsedRealtime() + (result.timestampNanos / 1_000_000)
+                        resultTimestamp in windowStartTime..windowEndTime
+                    }
+
+                    // 如果需要调试，可以打印过滤信息
+                    if (isBluetoothTimeWindowEnabled) {
+                        Log.d("BluetoothFilter_Collect", "Filtering: ${allBluetoothResults.size} -> ${filteredBluetoothResults.size} results within ${(bluetoothTimeWindowSeconds *1000).toLong()}ms window.")
+                    }
+
+                    // 4. 格式化过滤后的结果，并使用独立的蓝牙时间戳 (windowEndTime)
+                    val bluetoothStringsToWrite = filteredBluetoothResults.map { result ->
+                        "${windowEndTime},${result.device.name ?: "N/A"},${result.device.address},2462,${result.rssi}\n"
+                    }
+
+                    // 5. 将格式化后的字符串写入文件
                     try {
                         val bluetoothWriter = FileWriter(bluetoothFile, true)
-                        //蓝牙数据前不加航点信息，因为它是连续扫描的，不像Wi-Fi是一次性的
-                        for (result in bluetoothResults) {
-                            bluetoothWriter.append(result)
+                        bluetoothStringsToWrite.forEach { resultString ->
+                            bluetoothWriter.append("$resultString\n")
                         }
                         bluetoothWriter.flush()
                         bluetoothWriter.close()
@@ -237,8 +272,14 @@ class TimerUtils(
                         e.printStackTrace()
                     }
 
+                    // 6. 清理 FrontService 中的源数据列表，为下一个周期做准备
+                    clearBluetoothScanningResultCallback()
+
+                    // ************  蓝牙逻辑核心修改部分结束  ************
+
                     delay((frequencyY * 1000).toLong())
-                }catch (e: CancellationException){
+
+                } catch (e: CancellationException) {
                     break
                 }
             }
