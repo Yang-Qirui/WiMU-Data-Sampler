@@ -622,6 +622,7 @@ fun SettingScreen(
                     .padding(top = 12.dp)
                     .align(Alignment.CenterHorizontally),
                 enabled = (
+                        bluetoothTimeWindowSeconds != curBluetoothTimeWindowSeconds.toFloatOrNull() ||
                         warehouseName != curWarehouseName ||
                         stride != curStride.toFloatOrNull() ||
                         beta != curBeta.toFloatOrNull() ||

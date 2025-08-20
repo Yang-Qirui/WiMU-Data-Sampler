@@ -588,27 +588,31 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
 //                if (success) {
 //                    _serviceState.update { it.copy(isLoadingStarted = true) }
 //                }
+                    val windowStartTime = System.currentTimeMillis()
+                    delay((period * 1000).toLong())
                     // 1. 获取当前时间戳，作为时间窗口的结束点
-                    val windowEndTime = System.currentTimeMillis()
-
-                    // 2. 如果启用了时间窗口，计算窗口的起始点
-                    val windowStartTime = if (_serviceState.value.isBluetoothTimeWindowEnabled) {
-                        windowEndTime - (_serviceState.value.bluetoothTimeWindowSeconds * 1000).toLong()
-                    } else {
-                        0L // 如果未启用，则起始时间为0，意味着接受所有数据
-                    }
+                    val windowEndTime = System.currentTimeMillis() - ((period - _serviceState.value.bluetoothTimeWindowSeconds)* 1000).toLong()
 
                     // 3. 过滤当前缓冲区(bufferedBluetoothResults)中的数据
-                    val filteredBleResults = bufferedBluetoothResults.filter { result ->
-                        // 将 ScanResult 的纳秒时间戳转换为毫秒
-                        val resultTimestamp = System.currentTimeMillis() - SystemClock.elapsedRealtime() + (result.timestampNanos / 1_000_000)
-                        // 只保留在 [windowStartTime, windowEndTime] 区间内的数据
+                    val elapsedRealtimeOffset = System.currentTimeMillis() - SystemClock.elapsedRealtime()
+
+                    val filteredBleResults = bluetoothScanningResults.filter { result ->
+                        // 使用更准确的时间戳计算方法
+                        val resultTimestamp = elapsedRealtimeOffset + (result.timestampNanos / 1_000_000)
                         resultTimestamp in windowStartTime..windowEndTime
                     }
 
                     // 如果需要调试，可以打印过滤前后的数量
                     if (_serviceState.value.isBluetoothTimeWindowEnabled) {
-                        Log.d("BluetoothFilter_Infer", "Filtering: ${bufferedBluetoothResults.size} -> ${filteredBleResults.size} results within ${windowEndTime - windowStartTime}ms window.")
+                        Log.d("BluetoothFilter_Infer", "Filtering: ${bluetoothScanningResults.size} -> ${filteredBleResults.size} results")
+                        Log.d("BluetoothFilter_Infer", "Window: $windowStartTime - $windowEndTime")
+
+                        // 添加详细日志
+                        bluetoothScanningResults.forEach { result ->
+                            val resultTimestamp = elapsedRealtimeOffset + (result.timestampNanos / 1_000_000)
+                            Log.d("BluetoothFilter_Infer",
+                                "Device: ${result.device.address}, RSSI: ${result.rssi}, Time: $resultTimestamp, InWindow: ${resultTimestamp in windowStartTime..windowEndTime}")
+                        }
                     }
 
                     // 1. DATA TO WRITE NOW:
@@ -644,10 +648,6 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
                     //    The main collection list is now empty, ready to start collecting new
                     //    Bluetooth results for the upcoming cycle.
                     bluetoothScanningResults.clear()
-
-                    // 4. RETURN THE DATA TO BE WRITTEN:
-                    //    Send the formatted data from the previous cycle to TimerUtils.
-                    delay((period * 1000).toLong())
                 }
             }
             publishData("ack", data = AckData(deviceId = deviceId, ackInfo = "inference_on"))
@@ -691,7 +691,6 @@ class FrontService : Service(), SensorUtils.SensorDataListener, MqttCommandListe
 
     private fun onLatestWifiResultChanged(newValue: List<String>) {
         try {
-
             serviceScope.launch {
                 if (!firstStart) {
                     val directionSnapshot = bufferMutex.withLock {

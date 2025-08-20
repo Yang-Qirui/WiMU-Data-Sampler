@@ -164,7 +164,6 @@ class TimerUtils(
         dirName: String,
         collectWaypoint: Boolean,
         waypointPosition: Offset? = null,
-        // --- 新增参数 ---
         isBluetoothTimeWindowEnabled: Boolean,
         bluetoothTimeWindowSeconds: Float
     ) {
@@ -192,7 +191,7 @@ class TimerUtils(
             }
             if (!bluetoothFile.exists()) {
                 // MODIFIED: 使用了正确的蓝牙表头
-                bluetoothFile.writeText("timestamp,device_name,mac_address,rssi\n")
+                bluetoothFile.writeText("timestamp,device_name,mac_address,rssi,tx_power\n")
             }
             labelFile?.let {
                 if (!it.exists()) {
@@ -209,6 +208,8 @@ class TimerUtils(
         clearBluetoothScanningResultCallback() // 确保开始前清理蓝牙缓存
 
         scanningJob = coroutineScope.launch {
+            var windowStartTime = System.currentTimeMillis()
+            var windowEndTime = System.currentTimeMillis()
             while (isScanningTaskRunning.get() && isActive) {
 
                 // --- Wi-Fi 部分逻辑保持不变 ---
@@ -233,14 +234,6 @@ class TimerUtils(
                     // ************  蓝牙逻辑核心修改部分开始  ************
                     // ******************************************************
 
-                    // 1. 定义时间窗口
-                    val windowEndTime = System.currentTimeMillis()
-                    val windowStartTime = if (isBluetoothTimeWindowEnabled) {
-                        windowEndTime - (bluetoothTimeWindowSeconds *1000).toLong()
-                    } else {
-                        0L // 如果禁用，则不过滤
-                    }
-
                     // 2. 获取原始的蓝牙扫描结果 (List<ScanResult>)
                     val allBluetoothResults = getBluetoothScanningResultCallback()
 
@@ -250,14 +243,19 @@ class TimerUtils(
                         resultTimestamp in windowStartTime..windowEndTime
                     }
 
-                    // 如果需要调试，可以打印过滤信息
-                    if (isBluetoothTimeWindowEnabled) {
-                        Log.d("BluetoothFilter_Collect", "Filtering: ${allBluetoothResults.size} -> ${filteredBluetoothResults.size} results within ${(bluetoothTimeWindowSeconds *1000).toLong()}ms window.")
+                    Log.d("BluetoothFilter_Infer", "Filtering: ${allBluetoothResults.size} -> ${filteredBluetoothResults.size} results")
+                    Log.d("BluetoothFilter_Infer", "Window: $windowStartTime - $windowEndTime")
+
+                    // 添加详细日志
+                    allBluetoothResults.forEach { result ->
+                        val resultTimestamp = System.currentTimeMillis() - SystemClock.elapsedRealtime() + (result.timestampNanos / 1_000_000)
+                        Log.d("BluetoothFilter_Infer",
+                            "Device: ${result.device.address}, RSSI: ${result.rssi}, Time: $resultTimestamp, InWindow: ${resultTimestamp in windowStartTime..windowEndTime}")
                     }
 
                     // 4. 格式化过滤后的结果，并使用独立的蓝牙时间戳 (windowEndTime)
                     val bluetoothStringsToWrite = filteredBluetoothResults.map { result ->
-                        "${windowEndTime},${result.device.name ?: "N/A"},${result.device.address},2462,${result.rssi}\n"
+                        "${windowEndTime},${result.device.name ?: "N/A"},${result.device.address},2462,${result.rssi},${result.txPower}\n"
                     }
 
                     // 5. 将格式化后的字符串写入文件
@@ -274,10 +272,12 @@ class TimerUtils(
 
                     // 6. 清理 FrontService 中的源数据列表，为下一个周期做准备
                     clearBluetoothScanningResultCallback()
-
                     // ************  蓝牙逻辑核心修改部分结束  ************
 
+                    windowStartTime = System.currentTimeMillis()
+                    windowEndTime = windowStartTime + (bluetoothTimeWindowSeconds*1000).toLong()
                     delay((frequencyY * 1000).toLong())
+
 
                 } catch (e: CancellationException) {
                     break

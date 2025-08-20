@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">WiMU</string>
+    <string name="data_collection_label">DATA COLLECTION</string>
 </resources>
