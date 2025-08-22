@@ -394,7 +394,11 @@ class MainActivity : ComponentActivity() {
                                 disableMyStepDetector={
                                     //关闭自己的Step Counter传感器逻辑
                                     frontService?.disableOwnStepCounter()
-                                }
+                                },
+                                cumulatedStep = serviceState.cumulatedStep,
+                                uploadFlag = serviceState.uploadFlag,
+                                uploadOffset = serviceState.uploadOffset,
+                                rttLatency = serviceState.rttLatency
                             )
                         }
                         composable(MainActivityDestinations.Settings.route) {

@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.compose.ui.geometry.Offset
 import kotlinx.serialization.Serializable
@@ -237,7 +238,7 @@ data class UploadBatchManifest(
 fun calculateTotalDisplacement(directions: List<Float>, strideLength: Float): Offset {
     var totalDx = 0.0
     var totalDy = 0.0
-
+    Log.d("Directions", directions.size.toString())
     for (angleRadians in directions) {
         // 将角度转换为弧度，因为三角函数需要用弧度
         // 根据三角函数计算这一步的dx和dy

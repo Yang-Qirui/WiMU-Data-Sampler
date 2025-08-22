@@ -3,7 +3,6 @@ package com.example.wimudatasampler.Pages.HorizontalPage
 
 import android.annotation.SuppressLint
 import android.graphics.Paint
-import android.util.Log
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.VectorConverter
@@ -105,7 +104,11 @@ fun InferenceHorizontalPage(
     setEnableMyStepDetector: (Boolean) -> Unit,
     //MapToShow
     imageBitmap: ImageBitmap,
-    selectedMap: MapModels.ImageMap
+    selectedMap: MapModels.ImageMap,
+    cumulatedStep: Int,
+    uploadFlag: Int,
+    uploadOffset: Offset,
+    rttLatency: Float
 ) {
     val scope = rememberCoroutineScope()
 
@@ -404,7 +407,7 @@ fun InferenceHorizontalPage(
                     .padding(vertical = 4.dp, horizontal = 8.dp),
                 text = when {
                     !isLocatingStarted -> "Ready to go"
-                    else -> "yaw ${(userHeading ?: 0.0F).roundToInt()}, imu (${imuOffset?.x?.roundToInt()}, ${imuOffset?.y?.roundToInt()}), pred (${targetOffset.x.roundToInt()}, ${targetOffset.y.roundToInt()})"
+                    else -> "yaw ${(userHeading ?: 0.0F).roundToInt()}, imu (${imuOffset?.x?.roundToInt()}, ${imuOffset?.y?.roundToInt()}), uploadOffset (${uploadOffset.x.roundToInt()}, ${uploadOffset.y.roundToInt()}), pred (${targetOffset.x.roundToInt()}, ${targetOffset.y.roundToInt()}), step $cumulatedStep, flag $uploadFlag, lat ${rttLatency}"
                 },
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )

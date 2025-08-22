@@ -6,7 +6,7 @@ import kotlinx.serialization.json.JsonElement
 @Serializable
 data class MqttData(
     val command: String,
-    val data: Map<String, JsonElement> = emptyMap()
+    val data: Map<String, JsonElement>? = emptyMap()
 )
 
 // 定义一个接口，让其他组件（如 Activity/ViewModel/Service）来实现
@@ -16,7 +16,7 @@ interface MqttCommandListener {
     fun onStopSampling()
     fun onStartInference()
     fun onStopInference()
-    fun onGetInferenceResult(x: Float, y: Float)
+    fun onGetInferenceResult(x: Float, y: Float, rtt: Float)
     fun onUnknownCommand(command: String)
     fun onCommandError(payload: String, error: Throwable)
 }

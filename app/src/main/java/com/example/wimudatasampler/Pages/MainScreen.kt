@@ -45,6 +45,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -104,7 +105,11 @@ fun MainScreen(
     enableImu: () -> Unit,
     disableImu: () -> Unit,
     enableMyStepDetector: () -> Unit,
-    disableMyStepDetector: () -> Unit
+    disableMyStepDetector: () -> Unit,
+    cumulatedStep: Int,
+    uploadFlag: Int,
+    uploadOffset: Offset,
+    rttLatency: Float
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -243,7 +248,11 @@ fun MainScreen(
                 enableImu = enableImu,
                 disableImu = disableImu,
                 enableMyStepDetector = enableMyStepDetector,
-                disableMyStepDetector = disableMyStepDetector
+                disableMyStepDetector = disableMyStepDetector,
+                cumulatedStep = cumulatedStep,
+                uploadFlag = uploadFlag,
+                uploadOffset = uploadOffset,
+                rttLatency = rttLatency
             )
         }
     }
@@ -297,6 +306,10 @@ fun AppHorizontalPager(
     disableImu: () -> Unit,
     enableMyStepDetector: () -> Unit,
     disableMyStepDetector: () -> Unit,
+    cumulatedStep: Int,
+    uploadFlag: Int,
+    uploadOffset: Offset,
+    rttLatency: Float
 ) {
     LaunchedEffect(state) {
         pagerState.scrollToPage(state)
@@ -398,7 +411,11 @@ fun AppHorizontalPager(
                                     }
                                 },
                                 imageBitmap = bitmap,
-                                selectedMap = map
+                                selectedMap = map,
+                                cumulatedStep = cumulatedStep,
+                                uploadFlag = uploadFlag,
+                                uploadOffset = uploadOffset,
+                                rttLatency = rttLatency
                             )
                         } ?: ImageBitmap.imageResource(R.drawable.image_placeholder)
                     } else {

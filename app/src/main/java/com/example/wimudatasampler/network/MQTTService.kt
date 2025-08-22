@@ -117,9 +117,16 @@ object MqttClient {
                             commandListener?.onStartInference()
                         }
                         "inference_result" -> {
-                            val x = result.data["x"]?.jsonPrimitive?.content!!
-                            val y = result.data["y"]?.jsonPrimitive?.content!!
-                            commandListener?.onGetInferenceResult(x.toFloat(), y.toFloat()) //TODO：需要修改
+                            result.data?.run {
+                                // 在这个块内, 'this' 就是非空的 `result.data`
+                                val x = this["x"]?.jsonPrimitive?.content
+                                val y = this["y"]?.jsonPrimitive?.content
+                                val startTime = this["startTime"]?.jsonPrimitive?.content?.toLong()
+                                val diff = (System.currentTimeMillis() - startTime!!).toFloat()
+                                if (x != null && y != null) {
+                                    commandListener?.onGetInferenceResult(x.toFloat(), y.toFloat(), (diff / 1_000))
+                                }
+                            }
                         }
                     }
                 } catch (e: Exception) {
@@ -316,10 +323,12 @@ object MqttClient {
     @Serializable
     data class InferenceData(
         val deviceId: String,
-        val wifiList: List<String>,
+        val wifiList: List<String>?,
         val imuOffset: Pair<Float, Float>?,
         val sysNoise: Float,
-        val obsNoise: Float
+        val obsNoise: Float,
+        val step: Int,
+        val startTime: Long?
     )
     @Serializable
     data class AckData(
