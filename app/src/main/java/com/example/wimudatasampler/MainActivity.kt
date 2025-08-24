@@ -1,7 +1,6 @@
 package com.example.wimudatasampler
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.BroadcastReceiver
@@ -45,7 +44,6 @@ import com.example.wimudatasampler.Pages.SettingScreen
 import com.example.wimudatasampler.navigation.MainActivityDestinations
 import com.example.wimudatasampler.ui.theme.WiMUTheme
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
@@ -326,8 +324,8 @@ class MainActivity : ComponentActivity() {
                                 pitch = serviceState.pitch,
                                 roll = serviceState.roll,
                                 numOfLabelSampling = serviceState.numOfLabelSampling, // Start from 0
-                                wifiScanningInfo = serviceState.wifiScanningInfo,
-                                wifiSamplingCycles = serviceState.wifiSamplingCycles,
+                                wifiScanningInfo = serviceState.wifiOrBleScanningInfo,
+                                wifiSamplingCycles = serviceState.wifiOrBleSamplingCycles,
                                 sensorSamplingCycles = serviceState.sensorSamplingCycles,
                                 saveDirectory = serviceState.saveDirectory,
                                 //Location Data
